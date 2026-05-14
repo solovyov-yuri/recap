@@ -10,6 +10,7 @@ import typer
 sys.stdout.reconfigure(write_through=True)
 
 app = typer.Typer(help="Meeting transcription and summarization tool")
+logger = logging.getLogger(__name__)
 
 _DEFAULT_AUDIO = Path("data/input/meeting.wav")
 _DEFAULT_TRANSCRIPT = Path("data/output/transcript.txt")
@@ -38,7 +39,9 @@ def _ensure_output(path: Path) -> None:
     if path.is_dir():
         typer.echo(f"Error: output path is a directory: {path}", err=True)
         raise typer.Exit(code=1)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.parent.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info("Created output directory: %s", path.parent)
 
 
 @app.command()
@@ -51,6 +54,7 @@ def transcribe(
     """Transcribe an audio file to a timestamped transcript."""
     _configure_logging(verbose)
     _ensure_output(output)
+    logger.info("Transcribing: %s", audio)
     try:
         from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
@@ -60,6 +64,7 @@ def transcribe(
         raise typer.Exit(code=1) from exc
 
     output.write_text(transcript.to_file_format(), encoding="utf-8")
+    logger.info("Transcript written: %s", output.resolve())
     typer.echo(f"Transcript saved to {output}")
 
 
@@ -73,6 +78,7 @@ def summarize(
     """Generate a Telegram-formatted meeting summary from a transcript."""
     _configure_logging(verbose)
     _ensure_output(output)
+    logger.info("Summarizing: %s", transcript)
     try:
         from formatters import to_telegram  # noqa: PLC0415
         from providers.ollama import OllamaSummarizer  # noqa: PLC0415
@@ -87,6 +93,7 @@ def summarize(
 
     typer.echo(summary)
     output.write_text(summary, encoding="utf-8")
+    logger.info("Summary written: %s", output.resolve())
     typer.echo(f"\nSummary saved to {output}")
 
 
@@ -100,5 +107,7 @@ def run(
     verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
 ) -> None:
     """Run the full pipeline: transcribe audio, then summarize."""
+    logger.info("Pipeline start: %s", audio)
     transcribe(audio=audio, output=transcript, language=language, verbose=verbose)
     summarize(transcript=transcript, output=summary, model=model, verbose=verbose)
+    logger.info("Pipeline done.")
