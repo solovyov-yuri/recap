@@ -298,6 +298,7 @@ dependencies = [
     { name = "nvidia-cublas-cu12" },
     { name = "nvidia-cudnn-cu12" },
     { name = "ollama" },
+    { name = "rich" },
     { name = "typer" },
 ]
 
@@ -312,6 +313,7 @@ requires-dist = [
     { name = "nvidia-cublas-cu12", specifier = ">=12.9.2.10" },
     { name = "nvidia-cudnn-cu12", specifier = ">=9.22.0.52" },
     { name = "ollama", specifier = ">=0.4.0" },
+    { name = "rich", specifier = ">=13.0" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
 

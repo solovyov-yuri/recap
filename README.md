@@ -18,7 +18,7 @@ ollama pull qwen3.5          # модель по умолчанию
 ## Установка
 
 ```bash
-git clone <repo>
+git clone https://github.com/solovyov-yuri/meeting-sum.git
 cd meeting-sum
 uv sync
 ```

@@ -36,11 +36,13 @@ class OllamaSummarizer:
 
     def summarize(self, transcript_text: str) -> str:
         import ollama  # noqa: PLC0415 — deferred to keep CLI startup fast
+        from rich.console import Console  # noqa: PLC0415
 
         prompt = self._prompt_template.format(transcript=transcript_text)
         logger.info("Calling Ollama model %s…", self._model)
-        response = ollama.chat(
-            model=self._model,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        with Console(stderr=True).status(f"[bold cyan]Generating summary ({self._model})…[/]"):
+            response = ollama.chat(
+                model=self._model,
+                messages=[{"role": "user", "content": prompt}],
+            )
         return response.message.content

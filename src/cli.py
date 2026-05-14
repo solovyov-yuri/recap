@@ -11,11 +11,20 @@ sys.stdout.reconfigure(write_through=True)
 
 app = typer.Typer(help="Meeting transcription and summarization tool")
 
-_DEFAULT_AUDIO = Path("meeting.wav")
-_DEFAULT_TRANSCRIPT = Path("transcript.txt")
-_DEFAULT_SUMMARY = Path("summary.txt")
+_DEFAULT_AUDIO = Path("data/input/meeting.wav")
+_DEFAULT_TRANSCRIPT = Path("data/output/transcript.txt")
+_DEFAULT_SUMMARY = Path("data/output/summary.txt")
 _DEFAULT_LANGUAGE = "ru"
 _DEFAULT_MODEL = "qwen3.5:latest"
+
+_AudioArg = Annotated[
+    Path,
+    typer.Argument(exists=True, file_okay=True, dir_okay=False, help="Audio file to process"),
+]
+_TranscriptArg = Annotated[
+    Path,
+    typer.Argument(exists=True, file_okay=True, dir_okay=False, help="Transcript file to summarize"),
+]
 
 
 def _configure_logging(verbose: bool) -> None:
@@ -25,36 +34,45 @@ def _configure_logging(verbose: bool) -> None:
     )
 
 
+def _ensure_output(path: Path) -> None:
+    if path.is_dir():
+        typer.echo(f"Error: output path is a directory: {path}", err=True)
+        raise typer.Exit(code=1)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
 @app.command()
 def transcribe(
-    audio: Annotated[Path, typer.Argument(help="Audio file to transcribe")] = _DEFAULT_AUDIO,
+    audio: _AudioArg = _DEFAULT_AUDIO,
     output: Annotated[Path, typer.Option("-o", "--output", help="Output transcript file")] = _DEFAULT_TRANSCRIPT,
     language: Annotated[str, typer.Option("-l", "--language", help="Language code (ru, en, …)")] = _DEFAULT_LANGUAGE,
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Transcribe an audio file to a timestamped transcript."""
     _configure_logging(verbose)
+    _ensure_output(output)
     try:
         from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
         transcript = WhisperTranscriber().transcribe(audio, language)
     except Exception as exc:
-        typer.echo(f"Ошибка транскрибации: {exc}", err=True)
+        typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     output.write_text(transcript.to_file_format(), encoding="utf-8")
-    typer.echo(f"Транскрипция сохранена в {output}")
+    typer.echo(f"Transcript saved to {output}")
 
 
 @app.command()
 def summarize(
-    transcript: Annotated[Path, typer.Argument(help="Transcript file to summarize")] = _DEFAULT_TRANSCRIPT,
+    transcript: _TranscriptArg = _DEFAULT_TRANSCRIPT,
     output: Annotated[Path, typer.Option("-o", "--output", help="Output summary file")] = _DEFAULT_SUMMARY,
     model: Annotated[str, typer.Option("-m", "--model", help="Ollama model name")] = _DEFAULT_MODEL,
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Generate a Telegram-formatted meeting summary from a transcript."""
     _configure_logging(verbose)
+    _ensure_output(output)
     try:
         from formatters import to_telegram  # noqa: PLC0415
         from providers.ollama import OllamaSummarizer  # noqa: PLC0415
@@ -64,17 +82,17 @@ def summarize(
         raw = OllamaSummarizer(model=model).summarize(tr.to_text())
         summary = to_telegram(raw)
     except Exception as exc:
-        typer.echo(f"Ошибка генерации саммари: {exc}", err=True)
+        typer.echo(f"Summarization error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     typer.echo(summary)
     output.write_text(summary, encoding="utf-8")
-    typer.echo(f"\nСаммари сохранено в {output}")
+    typer.echo(f"\nSummary saved to {output}")
 
 
 @app.command()
 def run(
-    audio: Annotated[Path, typer.Argument(help="Audio file to process")] = _DEFAULT_AUDIO,
+    audio: _AudioArg = _DEFAULT_AUDIO,
     language: Annotated[str, typer.Option("-l", "--language")] = _DEFAULT_LANGUAGE,
     model: Annotated[str, typer.Option("-m", "--model")] = _DEFAULT_MODEL,
     transcript: Annotated[Path, typer.Option("--transcript")] = _DEFAULT_TRANSCRIPT,
