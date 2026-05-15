@@ -12,9 +12,9 @@ sys.stdout.reconfigure(write_through=True)
 app = typer.Typer(help="Meeting transcription and summarization tool")
 logger = logging.getLogger(__name__)
 
-_DEFAULT_AUDIO = Path("data/input/meeting.wav")
-_DEFAULT_TRANSCRIPT = Path("data/output/transcript.txt")
-_DEFAULT_SUMMARY = Path("data/output/summary.txt")
+_DEFAULT_AUDIO = Path("data/meeting.wav")
+_DEFAULT_TRANSCRIPT = Path("data/transcript.txt")
+_DEFAULT_SUMMARY = Path("data/summary.txt")
 _DEFAULT_LANGUAGE = "ru"
 _DEFAULT_MODEL = "qwen3.5:latest"
 

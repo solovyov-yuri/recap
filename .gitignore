@@ -10,7 +10,5 @@ wheels/
 .venv
 
 # Data files — keep folder structure, ignore content
-data/input/*
-data/output/*
-!data/input/.gitkeep
-!data/output/.gitkeep
+data/*
+!data/.gitkeep
