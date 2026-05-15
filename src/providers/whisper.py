@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
 import sys
@@ -11,24 +12,42 @@ logger = logging.getLogger(__name__)
 
 
 def _set_cuda_paths() -> None:
-    """Prepend venv NVIDIA lib dirs to PATH / LD_LIBRARY_PATH before CUDA libs are loaded."""
+    """Pre-load venv NVIDIA libs so ctranslate2's lazy dlopen calls find them."""
+    project_root = Path(__file__).resolve().parents[2]
     if sys.platform == "win32":
-        site = Path(".venv") / "Lib" / "site-packages"
+        logger.info("windows detected, adding NVIDIA libs to PATH")
+        site = project_root / ".venv" / "Lib" / "site-packages"
         lib_dir = "bin"
         env_var = "PATH"
         sep = ";"
+        nvidia_dirs = [
+            str(site / "nvidia" / "cublas" / lib_dir),
+            str(site / "nvidia" / "cudnn" / lib_dir),
+        ]
+        existing = os.environ.get(env_var, "")
+        os.environ[env_var] = sep.join(nvidia_dirs + [existing])
     else:
+        logger.info("linux detected, adding NVIDIA libs to LD_LIBRARY_PATH")
         py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
-        site = Path(".venv") / "lib" / py_ver / "site-packages"
+        site = project_root / ".venv" / "lib" / py_ver / "site-packages"
         lib_dir = "lib"
-        env_var = "LD_LIBRARY_PATH"
-        sep = ":"
-    extras = [
-        str(site / "nvidia" / "cublas" / lib_dir),
-        str(site / "nvidia" / "cudnn" / lib_dir),
-    ]
-    existing = os.environ.get(env_var, "")
-    os.environ[env_var] = sep.join(extras + [existing])
+        # Update LD_LIBRARY_PATH for child processes
+        nvidia_dirs = [
+            str(site / "nvidia" / "cublas" / lib_dir),
+            str(site / "nvidia" / "cudnn" / lib_dir),
+            str(site / "nvidia" / "cuda_nvrtc" / lib_dir),
+        ]
+        existing = os.environ.get("LD_LIBRARY_PATH", "")
+        os.environ["LD_LIBRARY_PATH"] = ":".join(nvidia_dirs + [existing])
+        # Pre-load libs via absolute path so ctranslate2's dlopen finds them already mapped.
+        # glibc dlopen caches by SONAME; a full-path load satisfies later name-only lookups.
+        for lib_path in [
+            site / "nvidia" / "cublas" / lib_dir / "libcublasLt.so.12",
+            site / "nvidia" / "cublas" / lib_dir / "libcublas.so.12",
+            site / "nvidia" / "cudnn" / lib_dir / "libcudnn.so.9",
+        ]:
+            if lib_path.exists():
+                ctypes.CDLL(str(lib_path))
 
 
 class WhisperTranscriber:
