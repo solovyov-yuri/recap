@@ -147,6 +147,7 @@ def run(
     """Run the full pipeline: transcribe audio, then summarize."""
     from config import PROVIDER_PRESETS, Settings  # noqa: PLC0415
     from formatters import to_telegram  # noqa: PLC0415
+    from pipeline import run_pipeline  # noqa: PLC0415
     from prompts import PROMPTS  # noqa: PLC0415
     from providers.llm import LLMSummarizer  # noqa: PLC0415
     from providers.whisper import WhisperTranscriber  # noqa: PLC0415
@@ -176,12 +177,23 @@ def run(
     _ensure_output(transcript_path)
     _ensure_output(summary_path)
 
-    logger.info("Transcribing %s…", audio_path)
+    transcriber = WhisperTranscriber(settings.whisper_model)
     try:
-        transcriber = WhisperTranscriber(settings.whisper_model)
-        tr = transcriber.transcribe(audio_path, language or settings.language)
+        tr, formatted = run_pipeline(
+            audio=audio_path,
+            transcriber=transcriber,
+            summarizer=LLMSummarizer(
+                model=model or settings.model,
+                api_key=settings.api_key,
+                base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
+                max_chars=settings.max_transcript_chars,
+                prompt_template=PROMPTS[mode_name],
+            ),
+            formatter=to_telegram,
+            language=language or settings.language,
+        )
     except Exception as exc:
-        typer.echo(f"Transcription error: {exc}", err=True)
+        typer.echo(f"Pipeline error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     try:
@@ -190,20 +202,6 @@ def run(
         typer.echo(f"Error writing transcript to {transcript_path.resolve()}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Transcript saved to {transcript_path}")
-
-    logger.info("Summarizing via %s (mode: %s)…", provider_name, mode_name)
-    try:
-        raw = LLMSummarizer(
-            model=model or settings.model,
-            api_key=settings.api_key,
-            base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
-            max_chars=settings.max_transcript_chars,
-            prompt_template=PROMPTS[mode_name],
-        ).summarize(tr.to_text())
-        formatted = to_telegram(raw)
-    except Exception as exc:
-        typer.echo(f"Summarization error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
 
     typer.echo(formatted)
     try:
