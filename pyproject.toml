@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-meeting-sum = "cli:app"
+recap = "cli:app"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]

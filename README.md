@@ -1,4 +1,4 @@
-# meeting-sum
+# recap
 
 Инструмент для транскрибации аудиозаписей встреч и автоматического составления саммари в формате Telegram.
 
@@ -18,8 +18,8 @@ ollama pull qwen3.5          # модель по умолчанию
 ## Установка
 
 ```bash
-git clone https://github.com/solovyov-yuri/meeting-sum.git
-cd meeting-sum
+git clone https://github.com/solovyov-yuri/recap.git
+cd recap
 uv sync
 ```
 
@@ -30,23 +30,24 @@ NVIDIA CUDA-библиотеки (cublas, cudnn) устанавливаются 
 ### Полный пайплайн
 
 ```bash
-uv run meeting-sum run meeting.wav
+uv run recap run                        # data/meeting.wav по умолчанию
+uv run recap run path/to/call.wav
 ```
 
-Записывает транскрипцию в `transcript.txt`, саммари — в `summary.txt`.
+Записывает транскрипцию в `data/transcript.txt`, саммари — в `data/summary.txt`.
 
 ### По шагам
 
 **Транскрибация:**
 ```bash
-uv run meeting-sum transcribe meeting.wav
-uv run meeting-sum transcribe call.wav -o call.txt -l en
+uv run recap transcribe meeting.wav
+uv run recap transcribe call.wav -o call.txt -l en
 ```
 
 **Саммари из готовой транскрипции:**
 ```bash
-uv run meeting-sum summarize
-uv run meeting-sum summarize call.txt -o call_summary.txt -m gemma4:e4b
+uv run recap summarize
+uv run recap summarize call.txt -o call_summary.txt -m gemma4:e4b
 ```
 
 ### Опции
@@ -65,10 +66,12 @@ uv run meeting-sum summarize call.txt -o call_summary.txt -m gemma4:e4b
 Значения по умолчанию можно переопределить:
 
 ```bash
-MEETING_SUM_AUDIO=standup.wav
-MEETING_SUM_LANGUAGE=en
-MEETING_SUM_OLLAMA_MODEL=gemma4:e4b
+MEETING_SUM_AUDIO=data/meeting.wav
+MEETING_SUM_TRANSCRIPT=data/transcript.txt
+MEETING_SUM_SUMMARY=data/summary.txt
+MEETING_SUM_LANGUAGE=ru
 MEETING_SUM_WHISPER_MODEL=large-v3
+MEETING_SUM_OLLAMA_MODEL=qwen3.5:latest
 ```
 
 ## Разработка
