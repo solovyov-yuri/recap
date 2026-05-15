@@ -70,12 +70,14 @@ def transcribe(
 def summarize(
     transcript: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Transcript file to summarize")] = None,
     output: Annotated[Optional[Path], typer.Option("-o", "--output", help="Output summary file")] = None,
-    model: Annotated[Optional[str], typer.Option("-m", "--model", help="Model name (overrides config)")] = None,
-    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help=f"Provider: openai | ollama | lm-studio | vllm")] = None,
+    mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
+    model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
+    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")] = None,
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Generate a Telegram-formatted meeting summary from a transcript."""
     from config import PROVIDER_PRESETS, Settings  # noqa: PLC0415
+    from prompts import PROMPTS  # noqa: PLC0415
 
     _configure_logging(verbose)
     settings = Settings.load()
@@ -85,14 +87,20 @@ def summarize(
         raise typer.Exit(code=1)
     output_path = output or settings.summary
     provider_name = provider or settings.provider
+    mode_name = mode or settings.summary_mode
 
     if provider_name not in PROVIDER_PRESETS:
         available = ", ".join(PROVIDER_PRESETS)
         typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
         raise typer.Exit(code=1)
 
+    if mode_name not in PROMPTS:
+        available = ", ".join(PROMPTS)
+        typer.echo(f"Unknown mode: {mode_name!r}. Available: {available}", err=True)
+        raise typer.Exit(code=1)
+
     _ensure_output(output_path)
-    logger.info("Summarizing: %s via %s", transcript_path, provider_name)
+    logger.info("Summarizing: %s via %s (mode: %s)", transcript_path, provider_name, mode_name)
     try:
         from formatters import to_telegram  # noqa: PLC0415
         from providers.llm import LLMSummarizer  # noqa: PLC0415
@@ -104,6 +112,7 @@ def summarize(
             api_key=settings.api_key,
             base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
             max_chars=settings.max_transcript_chars,
+            prompt_template=PROMPTS[mode_name],
         )
         raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
@@ -127,7 +136,8 @@ def summarize(
 def run(
     audio: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
     language: Annotated[Optional[str], typer.Option("-l", "--language")] = None,
-    model: Annotated[Optional[str], typer.Option("-m", "--model")] = None,
+    mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
+    model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
     provider: Annotated[Optional[str], typer.Option("-p", "--provider")] = None,
     transcript: Annotated[Optional[Path], typer.Option("--transcript")] = None,
     summary: Annotated[Optional[Path], typer.Option("--summary")] = None,
@@ -137,6 +147,7 @@ def run(
     from config import PROVIDER_PRESETS, Settings  # noqa: PLC0415
     from formatters import to_telegram  # noqa: PLC0415
     from pipeline import run_pipeline  # noqa: PLC0415
+    from prompts import PROMPTS  # noqa: PLC0415
     from providers.llm import LLMSummarizer  # noqa: PLC0415
     from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
@@ -150,10 +161,16 @@ def run(
     transcript_path = transcript or settings.transcript
     summary_path = summary or settings.summary
     provider_name = provider or settings.provider
+    mode_name = mode or settings.summary_mode
 
     if provider_name not in PROVIDER_PRESETS:
         available = ", ".join(PROVIDER_PRESETS)
         typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
+        raise typer.Exit(code=1)
+
+    if mode_name not in PROMPTS:
+        available = ", ".join(PROMPTS)
+        typer.echo(f"Unknown mode: {mode_name!r}. Available: {available}", err=True)
         raise typer.Exit(code=1)
 
     _ensure_output(transcript_path)
@@ -168,6 +185,7 @@ def run(
                 api_key=settings.api_key,
                 base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
                 max_chars=settings.max_transcript_chars,
+                prompt_template=PROMPTS[mode_name],
             ),
             formatter=to_telegram,
             language=language or settings.language,

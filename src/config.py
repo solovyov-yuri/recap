@@ -17,20 +17,21 @@ PROVIDER_PRESETS: dict[str, str | None] = {
 _KNOWN_FIELDS = {
     "audio", "transcript", "summary", "language",
     "whisper_model", "provider", "model", "api_key", "base_url",
-    "max_transcript_chars",
+    "max_transcript_chars", "summary_mode",
 }
 
 _ENV_MAP: dict[str, str] = {
-    "MEETING_SUM_AUDIO":               "audio",
-    "MEETING_SUM_TRANSCRIPT":          "transcript",
-    "MEETING_SUM_SUMMARY":             "summary",
-    "MEETING_SUM_LANGUAGE":            "language",
-    "MEETING_SUM_WHISPER_MODEL":       "whisper_model",
-    "MEETING_SUM_PROVIDER":            "provider",
-    "MEETING_SUM_MODEL":               "model",
-    "MEETING_SUM_API_KEY":             "api_key",
-    "MEETING_SUM_BASE_URL":            "base_url",
-    "MEETING_SUM_MAX_TRANSCRIPT_CHARS": "max_transcript_chars",
+    "RECAP_AUDIO":               "audio",
+    "RECAP_TRANSCRIPT":          "transcript",
+    "RECAP_SUMMARY":             "summary",
+    "RECAP_LANGUAGE":            "language",
+    "RECAP_WHISPER_MODEL":       "whisper_model",
+    "RECAP_PROVIDER":            "provider",
+    "RECAP_MODEL":               "model",
+    "RECAP_API_KEY":             "api_key",
+    "RECAP_BASE_URL":            "base_url",
+    "RECAP_MAX_TRANSCRIPT_CHARS": "max_transcript_chars",
+    "RECAP_SUMMARY_MODE":         "summary_mode",
 }
 
 
@@ -46,6 +47,7 @@ class Settings:
     api_key: str | None = None
     base_url: str | None = None
     max_transcript_chars: int = 60_000
+    summary_mode: str = "medium"
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:

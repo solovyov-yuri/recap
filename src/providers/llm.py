@@ -2,26 +2,9 @@ from __future__ import annotations
 
 import logging
 
+from prompts import PROMPTS, SUMMARY_PROMPT_MEDIUM_RU  # noqa: F401 — re-exported for consumers
+
 logger = logging.getLogger(__name__)
-
-SUMMARY_PROMPT_RU = """Ты — ассистент для подготовки саммари встреч. Отвечай только на русском языке.
-
-Составь саммари встречи по транскрипции ниже. Выведи только текст саммари — без вводных фраз и предложений продолжить.
-
-Структура (строго такая):
-*Тема встречи*
-[одно-два предложения о чём встреча]
-
-*Ключевые обсуждения*
-- [пункт]
-- [пункт]
-
-*Решения и задачи*
-- [задача или решение]
-- [задача или решение]
-
-Транскрипция:
-{transcript}"""
 
 
 def _truncate(text: str, max_chars: int) -> str:
@@ -37,7 +20,7 @@ class LLMSummarizer:
         model: str,
         api_key: str | None = None,
         base_url: str | None = None,
-        prompt_template: str = SUMMARY_PROMPT_RU,
+        prompt_template: str = SUMMARY_PROMPT_MEDIUM_RU,
         max_chars: int = 60_000,
     ) -> None:
         self._model = model
@@ -58,7 +41,10 @@ class LLMSummarizer:
             transcript_text = _truncate(transcript_text, self._max_chars)
         prompt = self._prompt_template.replace("{transcript}", transcript_text)
         logger.info("Calling %s (model: %s)…", self._base_url or "openai", self._model)
-        client = openai.OpenAI(api_key=self._api_key, base_url=self._base_url)
+        client = openai.OpenAI(
+            api_key=self._api_key or ("local" if self._base_url else None),
+            base_url=self._base_url,
+        )
         console = Console(stderr=True)
         console.print(f"[bold cyan]Generating summary ({self._model})…[/bold cyan]")
         chunks: list[str] = []

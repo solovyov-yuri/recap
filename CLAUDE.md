@@ -44,25 +44,29 @@ model: qwen3.5:latest
 api_key: null
 base_url: null
 max_transcript_chars: 60000
+summary_mode: medium      # brief | medium | detailed
 ```
 
 **Environment variables** (override config.yaml):
 
 | Variable | Config field |
 |---|---|
-| `MEETING_SUM_AUDIO` | `audio` |
-| `MEETING_SUM_TRANSCRIPT` | `transcript` |
-| `MEETING_SUM_SUMMARY` | `summary` |
-| `MEETING_SUM_LANGUAGE` | `language` |
-| `MEETING_SUM_WHISPER_MODEL` | `whisper_model` |
-| `MEETING_SUM_PROVIDER` | `provider` |
-| `MEETING_SUM_MODEL` | `model` |
-| `MEETING_SUM_API_KEY` | `api_key` |
-| `MEETING_SUM_BASE_URL` | `base_url` |
-| `MEETING_SUM_MAX_TRANSCRIPT_CHARS` | `max_transcript_chars` |
+| `RECAP_AUDIO` | `audio` |
+| `RECAP_TRANSCRIPT` | `transcript` |
+| `RECAP_SUMMARY` | `summary` |
+| `RECAP_LANGUAGE` | `language` |
+| `RECAP_WHISPER_MODEL` | `whisper_model` |
+| `RECAP_PROVIDER` | `provider` |
+| `RECAP_MODEL` | `model` |
+| `RECAP_API_KEY` | `api_key` |
+| `RECAP_BASE_URL` | `base_url` |
+| `RECAP_MAX_TRANSCRIPT_CHARS` | `max_transcript_chars` |
+| `RECAP_SUMMARY_MODE` | `summary_mode` |
 | `OPENAI_API_KEY` | `api_key` (fallback) |
 
 `max_transcript_chars` — transcript is truncated at the last newline before this limit before being sent to the LLM (default 60 000 chars ≈ 15k tokens). A warning is logged when truncation occurs.
+
+`summary_mode` — controls the prompt template and output structure: `brief` (2-3 sentences), `medium` (topic + discussions + decisions), `detailed` (participants + timeline + tasks with owners).
 
 ## Architecture
 
@@ -101,3 +105,7 @@ tests/
 **Transcript is immutable:** `Transcript.segments` is `tuple[Segment, ...]` — `frozen=True` on the dataclass is meaningful.
 
 **Adding a new LLM provider:** implement `summarize(self, transcript_text: str) -> str` — satisfies `Summarizer` protocol structurally (no inheritance needed). Add a preset URL to `PROVIDER_PRESETS` in `config.py`, wire in `cli.py`.
+
+**Adding a new summary mode:** add a `SUMMARY_PROMPT_<NAME>_RU` constant and register it in `PROMPTS` dict in `providers/llm.py`. No other files need changing.
+
+**Breaking change (v0.1):** `-m` flag was reassigned from `--model` to `--mode`. Use `--model` (long form) to specify the LLM model.
