@@ -41,7 +41,7 @@ class LLMSummarizer:
         import openai  # noqa: PLC0415 — deferred to keep CLI startup fast
         from rich.console import Console  # noqa: PLC0415
 
-        prompt = self._prompt_template.format(transcript=transcript_text)
+        prompt = self._prompt_template.replace("{transcript}", transcript_text)
         logger.info("Calling %s (model: %s)…", self._base_url or "openai", self._model)
         client = openai.OpenAI(api_key=self._api_key, base_url=self._base_url)
         console = Console(stderr=True)

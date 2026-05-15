@@ -16,7 +16,7 @@ class Segment:
 
 @dataclass(frozen=True)
 class Transcript:
-    segments: list[Segment]
+    segments: tuple[Segment, ...]
 
     @classmethod
     def from_file(cls, path: Path) -> Transcript:
@@ -34,7 +34,7 @@ class Transcript:
                 ))
             else:
                 segments.append(Segment(start=0.0, end=0.0, text=line))
-        return cls(segments=segments)
+        return cls(segments=tuple(segments))
 
     def to_text(self) -> str:
         """Plain text without timestamps — for LLM input."""

@@ -86,4 +86,4 @@ class WhisperTranscriber:
                 progress.update(task, completed=s.end)
 
         logger.info("Got %d segments.", len(segments))
-        return Transcript(segments=segments)
+        return Transcript(segments=tuple(segments))
