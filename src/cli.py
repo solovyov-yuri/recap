@@ -63,8 +63,12 @@ def transcribe(
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    output.write_text(transcript.to_file_format(), encoding="utf-8")
-    logger.info("Transcript written: %s", output.resolve())
+    logger.info("Writing transcript to %s", output.resolve())
+    try:
+        output.write_text(transcript.to_file_format(), encoding="utf-8")
+    except OSError as exc:
+        typer.echo(f"Error writing transcript to {output.resolve()}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(f"Transcript saved to {output}")
 
 
@@ -92,8 +96,12 @@ def summarize(
         raise typer.Exit(code=1) from exc
 
     typer.echo(summary)
-    output.write_text(summary, encoding="utf-8")
-    logger.info("Summary written: %s", output.resolve())
+    logger.info("Writing summary to %s", output.resolve())
+    try:
+        output.write_text(summary, encoding="utf-8")
+    except OSError as exc:
+        typer.echo(f"Error writing summary to {output.resolve()}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(f"\nSummary saved to {output}")
 
 
