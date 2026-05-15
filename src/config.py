@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,18 @@ _KNOWN_FIELDS = {
     "whisper_model", "provider", "model", "api_key", "base_url",
 }
 
+_ENV_MAP: dict[str, str] = {
+    "MEETING_SUM_AUDIO":         "audio",
+    "MEETING_SUM_TRANSCRIPT":    "transcript",
+    "MEETING_SUM_SUMMARY":       "summary",
+    "MEETING_SUM_LANGUAGE":      "language",
+    "MEETING_SUM_WHISPER_MODEL": "whisper_model",
+    "MEETING_SUM_PROVIDER":      "provider",
+    "MEETING_SUM_MODEL":         "model",
+    "MEETING_SUM_API_KEY":       "api_key",
+    "MEETING_SUM_BASE_URL":      "base_url",
+}
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -33,20 +46,26 @@ class Settings:
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:
-        if not config_path.exists():
-            return cls()
+        data: dict = {}
 
-        import yaml  # noqa: PLC0415
+        if config_path.exists():
+            import yaml  # noqa: PLC0415
 
-        with config_path.open(encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
+            with config_path.open(encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            for key in set(data) - _KNOWN_FIELDS:
+                logger.warning("config.yaml: unknown key %r (ignored)", key)
+            data = {k: v for k, v in data.items() if k in _KNOWN_FIELDS}
 
-        for key in set(data) - _KNOWN_FIELDS:
-            logger.warning("config.yaml: unknown key %r (ignored)", key)
+        for env_var, field in _ENV_MAP.items():
+            if (value := os.environ.get(env_var)) is not None:
+                data[field] = value
 
-        known = {k: v for k, v in data.items() if k in _KNOWN_FIELDS}
+        if "api_key" not in data and (value := os.environ.get("OPENAI_API_KEY")):
+            data["api_key"] = value
+
         for field in ("audio", "transcript", "summary"):
-            if field in known:
-                known[field] = Path(known[field])
+            if field in data:
+                data[field] = Path(data[field])
 
-        return cls(**known)
+        return cls(**data)
