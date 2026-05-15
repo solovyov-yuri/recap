@@ -133,5 +133,58 @@ def run(
     verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
 ) -> None:
     """Run the full pipeline: transcribe audio, then summarize."""
-    transcribe(audio=audio, output=transcript, language=language, verbose=verbose)
-    summarize(transcript=transcript, output=summary, model=model, provider=provider, verbose=verbose)
+    from config import PROVIDER_PRESETS, Settings  # noqa: PLC0415
+    from formatters import to_telegram  # noqa: PLC0415
+    from pipeline import run_pipeline  # noqa: PLC0415
+    from providers.llm import LLMSummarizer  # noqa: PLC0415
+    from providers.whisper import WhisperTranscriber  # noqa: PLC0415
+
+    _configure_logging(verbose)
+    settings = Settings.load()
+    audio_path = audio or settings.audio
+    if not audio_path.exists():
+        typer.echo(f"Error: audio file not found: {audio_path}", err=True)
+        raise typer.Exit(code=1)
+
+    transcript_path = transcript or settings.transcript
+    summary_path = summary or settings.summary
+    provider_name = provider or settings.provider
+
+    if provider_name not in PROVIDER_PRESETS:
+        available = ", ".join(PROVIDER_PRESETS)
+        typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
+        raise typer.Exit(code=1)
+
+    _ensure_output(transcript_path)
+    _ensure_output(summary_path)
+
+    try:
+        tr, formatted = run_pipeline(
+            audio=audio_path,
+            transcriber=WhisperTranscriber(settings.whisper_model),
+            summarizer=LLMSummarizer(
+                model=model or settings.model,
+                api_key=settings.api_key,
+                base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
+            ),
+            formatter=to_telegram,
+            language=language or settings.language,
+        )
+    except Exception as exc:
+        typer.echo(f"Pipeline error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        transcript_path.write_text(tr.to_file_format(), encoding="utf-8")
+    except OSError as exc:
+        typer.echo(f"Error writing transcript to {transcript_path.resolve()}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Transcript saved to {transcript_path}")
+
+    typer.echo(formatted)
+    try:
+        summary_path.write_text(formatted, encoding="utf-8")
+    except OSError as exc:
+        typer.echo(f"Error writing summary to {summary_path.resolve()}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"\nSummary saved to {summary_path}")
