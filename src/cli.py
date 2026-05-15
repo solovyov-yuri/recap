@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import typer
 
@@ -11,21 +11,6 @@ sys.stdout.reconfigure(write_through=True)
 
 app = typer.Typer(help="Meeting transcription and summarization tool")
 logger = logging.getLogger(__name__)
-
-_DEFAULT_AUDIO = Path("data/meeting.wav")
-_DEFAULT_TRANSCRIPT = Path("data/transcript.txt")
-_DEFAULT_SUMMARY = Path("data/summary.txt")
-_DEFAULT_LANGUAGE = "ru"
-_DEFAULT_MODEL = "qwen3.5:latest"
-
-_AudioArg = Annotated[
-    Path,
-    typer.Argument(exists=True, file_okay=True, dir_okay=False, help="Audio file to process"),
-]
-_TranscriptArg = Annotated[
-    Path,
-    typer.Argument(exists=True, file_okay=True, dir_okay=False, help="Transcript file to summarize"),
-]
 
 
 def _configure_logging(verbose: bool) -> None:
@@ -46,75 +31,112 @@ def _ensure_output(path: Path) -> None:
 
 @app.command()
 def transcribe(
-    audio: _AudioArg = _DEFAULT_AUDIO,
-    output: Annotated[Path, typer.Option("-o", "--output", help="Output transcript file")] = _DEFAULT_TRANSCRIPT,
-    language: Annotated[str, typer.Option("-l", "--language", help="Language code (ru, en, …)")] = _DEFAULT_LANGUAGE,
+    audio: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
+    output: Annotated[Optional[Path], typer.Option("-o", "--output", help="Output transcript file")] = None,
+    language: Annotated[Optional[str], typer.Option("-l", "--language", help="Language code (ru, en, …)")] = None,
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Transcribe an audio file to a timestamped transcript."""
+    from config import Settings  # noqa: PLC0415
+
     _configure_logging(verbose)
-    _ensure_output(output)
-    logger.info("Transcribing: %s", audio)
+    settings = Settings.load()
+    audio_path = audio or settings.audio
+    if not audio_path.exists():
+        typer.echo(f"Error: audio file not found: {audio_path}", err=True)
+        raise typer.Exit(code=1)
+    output_path = output or settings.transcript
+    lang = language or settings.language
+    _ensure_output(output_path)
+    logger.info("Transcribing: %s", audio_path)
     try:
         from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
-        _transcriber = WhisperTranscriber()
-        transcript = _transcriber.transcribe(audio, language)
+        transcript = WhisperTranscriber().transcribe(audio_path, lang)
     except Exception as exc:
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    logger.info("Writing transcript to %s", output.resolve())
+    logger.info("Writing transcript to %s", output_path.resolve())
     try:
-        output.write_text(transcript.to_file_format(), encoding="utf-8")
+        output_path.write_text(transcript.to_file_format(), encoding="utf-8")
     except OSError as exc:
-        typer.echo(f"Error writing transcript to {output.resolve()}: {exc}", err=True)
+        typer.echo(f"Error writing transcript to {output_path.resolve()}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
-    typer.echo(f"Transcript saved to {output}")
+    typer.echo(f"Transcript saved to {output_path}")
 
 
 @app.command()
 def summarize(
-    transcript: _TranscriptArg = _DEFAULT_TRANSCRIPT,
-    output: Annotated[Path, typer.Option("-o", "--output", help="Output summary file")] = _DEFAULT_SUMMARY,
-    model: Annotated[str, typer.Option("-m", "--model", help="Ollama model name")] = _DEFAULT_MODEL,
+    transcript: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Transcript file to summarize")] = None,
+    output: Annotated[Optional[Path], typer.Option("-o", "--output", help="Output summary file")] = None,
+    model: Annotated[Optional[str], typer.Option("-m", "--model", help="Model name (overrides config)")] = None,
+    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: ollama | openai")] = None,
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Generate a Telegram-formatted meeting summary from a transcript."""
+    from config import Settings  # noqa: PLC0415
+
     _configure_logging(verbose)
-    _ensure_output(output)
-    logger.info("Summarizing: %s", transcript)
+    settings = Settings.load()
+    transcript_path = transcript or settings.transcript
+    if not transcript_path.exists():
+        typer.echo(f"Error: transcript file not found: {transcript_path}", err=True)
+        raise typer.Exit(code=1)
+    output_path = output or settings.summary
+    provider_name = provider or settings.provider
+    _ensure_output(output_path)
+    logger.info("Summarizing: %s", transcript_path)
     try:
         from formatters import to_telegram  # noqa: PLC0415
-        from providers.ollama import OllamaSummarizer  # noqa: PLC0415
         from transcript import Transcript  # noqa: PLC0415
 
-        tr = Transcript.from_file(transcript)
-        raw = OllamaSummarizer(model=model).summarize(tr.to_text())
+        tr = Transcript.from_file(transcript_path)
+
+        if provider_name == "openai":
+            from providers.openai import OpenAISummarizer  # noqa: PLC0415
+
+            summarizer = OpenAISummarizer(
+                model=model or settings.openai_model,
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url,
+            )
+        elif provider_name == "ollama":
+            from providers.ollama import OllamaSummarizer  # noqa: PLC0415
+
+            summarizer = OllamaSummarizer(model=model or settings.ollama_model)
+        else:
+            typer.echo(f"Unknown provider: {provider_name!r}. Use 'ollama' or 'openai'.", err=True)
+            raise typer.Exit(code=1)
+
+        raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
+    except typer.Exit:
+        raise
     except Exception as exc:
         typer.echo(f"Summarization error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     typer.echo(summary)
-    logger.info("Writing summary to %s", output.resolve())
+    logger.info("Writing summary to %s", output_path.resolve())
     try:
-        output.write_text(summary, encoding="utf-8")
+        output_path.write_text(summary, encoding="utf-8")
     except OSError as exc:
-        typer.echo(f"Error writing summary to {output.resolve()}: {exc}", err=True)
+        typer.echo(f"Error writing summary to {output_path.resolve()}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
-    typer.echo(f"\nSummary saved to {output}")
+    typer.echo(f"\nSummary saved to {output_path}")
 
 
 @app.command()
 def run(
-    audio: _AudioArg = _DEFAULT_AUDIO,
-    language: Annotated[str, typer.Option("-l", "--language")] = _DEFAULT_LANGUAGE,
-    model: Annotated[str, typer.Option("-m", "--model")] = _DEFAULT_MODEL,
-    transcript: Annotated[Path, typer.Option("--transcript")] = _DEFAULT_TRANSCRIPT,
-    summary: Annotated[Path, typer.Option("--summary")] = _DEFAULT_SUMMARY,
+    audio: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
+    language: Annotated[Optional[str], typer.Option("-l", "--language")] = None,
+    model: Annotated[Optional[str], typer.Option("-m", "--model")] = None,
+    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: ollama | openai")] = None,
+    transcript: Annotated[Optional[Path], typer.Option("--transcript")] = None,
+    summary: Annotated[Optional[Path], typer.Option("--summary")] = None,
     verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
 ) -> None:
     """Run the full pipeline: transcribe audio, then summarize."""
     transcribe(audio=audio, output=transcript, language=language, verbose=verbose)
-    summarize(transcript=transcript, output=summary, model=model, verbose=verbose)
+    summarize(transcript=transcript, output=summary, model=model, provider=provider, verbose=verbose)

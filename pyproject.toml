@@ -13,6 +13,8 @@ dependencies = [
     "nvidia-cublas-cu12>=12.9.2.10",
     "nvidia-cudnn-cu12>=9.22.0.52",
     "ollama>=0.4.0",
+    "openai>=1.0",
+    "pyyaml>=6.0",
     "rich>=13.0",
     "typer>=0.12.0",
 ]

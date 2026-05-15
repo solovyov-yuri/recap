@@ -12,3 +12,6 @@ wheels/
 # Data files — keep folder structure, ignore content
 data/*
 !data/.gitkeep
+
+# Local config (contains secrets / personal paths)
+config.yaml
