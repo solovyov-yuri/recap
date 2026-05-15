@@ -24,10 +24,10 @@ SUMMARY_PROMPT_RU = """Ты — ассистент для подготовки �
 {transcript}"""
 
 
-class OpenAISummarizer:
+class LLMSummarizer:
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        model: str,
         api_key: str | None = None,
         base_url: str | None = None,
         prompt_template: str = SUMMARY_PROMPT_RU,
@@ -42,7 +42,7 @@ class OpenAISummarizer:
         from rich.console import Console  # noqa: PLC0415
 
         prompt = self._prompt_template.format(transcript=transcript_text)
-        logger.info("Calling OpenAI model %s…", self._model)
+        logger.info("Calling %s (model: %s)…", self._base_url or "openai", self._model)
         client = openai.OpenAI(api_key=self._api_key, base_url=self._base_url)
         with Console(stderr=True).status(f"[bold cyan]Generating summary ({self._model})…[/]"):
             response = client.chat.completions.create(

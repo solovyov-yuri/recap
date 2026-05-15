@@ -1,23 +1,19 @@
 # Copy this file to config.yaml and adjust values as needed.
 # Priority: CLI options > config.yaml > defaults.
 
-# Paths
-audio: data/meeting.wav
-transcript: data/transcript.txt
-summary: data/summary.txt
+# Provider: openai | ollama | lm-studio | vllm
+# Each preset has a built-in base_url. Override with base_url if needed.
+provider: ollama
+model: qwen3.5:latest
+
+# api_key: sk-...                          # required for openai; not needed for local providers
+# base_url: http://my-server:9000/v1       # overrides the provider preset URL
+
+# Paths (defaults shown)
+# audio: data/meeting.wav
+# transcript: data/transcript.txt
+# summary: data/summary.txt
 
 # Transcription
-language: ru
-whisper_model: large-v3
-
-# Summarization provider: ollama | openai
-provider: ollama
-
-# Ollama settings (used when provider: ollama)
-ollama_model: qwen3.5:latest
-
-# OpenAI settings (used when provider: openai)
-# Requires OPENAI_API_KEY env var.
-openai_model: gpt-4o-mini
-# openai_api_key: sk-...
-# openai_base_url: https://api.openai.com/v1   # override for Azure / local endpoints
+# language: ru
+# whisper_model: large-v3

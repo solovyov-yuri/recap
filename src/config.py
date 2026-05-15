@@ -6,9 +6,16 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+PROVIDER_PRESETS: dict[str, str | None] = {
+    "openai":    None,
+    "ollama":    "http://localhost:11434/v1",
+    "lm-studio": "http://localhost:1234/v1",
+    "vllm":      "http://localhost:8000/v1",
+}
+
 _KNOWN_FIELDS = {
     "audio", "transcript", "summary", "language",
-    "whisper_model", "provider", "ollama_model", "openai_model", "openai_api_key", "openai_base_url",
+    "whisper_model", "provider", "model", "api_key", "base_url",
 }
 
 
@@ -20,10 +27,9 @@ class Settings:
     language: str = "ru"
     whisper_model: str = "large-v3"
     provider: str = "ollama"
-    ollama_model: str = "qwen3.5:latest"
-    openai_model: str = "gpt-4o-mini"
-    openai_api_key: str | None = None
-    openai_base_url: str | None = None
+    model: str = "qwen3.5:latest"
+    api_key: str | None = None
+    base_url: str | None = None
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:

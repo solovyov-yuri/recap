@@ -71,11 +71,11 @@ def summarize(
     transcript: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Transcript file to summarize")] = None,
     output: Annotated[Optional[Path], typer.Option("-o", "--output", help="Output summary file")] = None,
     model: Annotated[Optional[str], typer.Option("-m", "--model", help="Model name (overrides config)")] = None,
-    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: ollama | openai")] = None,
+    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help=f"Provider: openai | ollama | lm-studio | vllm")] = None,
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Generate a Telegram-formatted meeting summary from a transcript."""
-    from config import Settings  # noqa: PLC0415
+    from config import PROVIDER_PRESETS, Settings  # noqa: PLC0415
 
     _configure_logging(verbose)
     settings = Settings.load()
@@ -85,30 +85,25 @@ def summarize(
         raise typer.Exit(code=1)
     output_path = output or settings.summary
     provider_name = provider or settings.provider
+
+    if provider_name not in PROVIDER_PRESETS:
+        available = ", ".join(PROVIDER_PRESETS)
+        typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
+        raise typer.Exit(code=1)
+
     _ensure_output(output_path)
-    logger.info("Summarizing: %s", transcript_path)
+    logger.info("Summarizing: %s via %s", transcript_path, provider_name)
     try:
         from formatters import to_telegram  # noqa: PLC0415
+        from providers.llm import LLMSummarizer  # noqa: PLC0415
         from transcript import Transcript  # noqa: PLC0415
 
         tr = Transcript.from_file(transcript_path)
-
-        if provider_name == "openai":
-            from providers.openai import OpenAISummarizer  # noqa: PLC0415
-
-            summarizer = OpenAISummarizer(
-                model=model or settings.openai_model,
-                api_key=settings.openai_api_key,
-                base_url=settings.openai_base_url,
-            )
-        elif provider_name == "ollama":
-            from providers.ollama import OllamaSummarizer  # noqa: PLC0415
-
-            summarizer = OllamaSummarizer(model=model or settings.ollama_model)
-        else:
-            typer.echo(f"Unknown provider: {provider_name!r}. Use 'ollama' or 'openai'.", err=True)
-            raise typer.Exit(code=1)
-
+        summarizer = LLMSummarizer(
+            model=model or settings.model,
+            api_key=settings.api_key,
+            base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
+        )
         raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
     except typer.Exit:
@@ -132,7 +127,7 @@ def run(
     audio: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
     language: Annotated[Optional[str], typer.Option("-l", "--language")] = None,
     model: Annotated[Optional[str], typer.Option("-m", "--model")] = None,
-    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: ollama | openai")] = None,
+    provider: Annotated[Optional[str], typer.Option("-p", "--provider")] = None,
     transcript: Annotated[Optional[Path], typer.Option("--transcript")] = None,
     summary: Annotated[Optional[Path], typer.Option("--summary")] = None,
     verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
