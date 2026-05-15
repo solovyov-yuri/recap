@@ -58,7 +58,8 @@ def transcribe(
     try:
         from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
-        transcript = WhisperTranscriber().transcribe(audio, language)
+        _transcriber = WhisperTranscriber()
+        transcript = _transcriber.transcribe(audio, language)
     except Exception as exc:
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -115,7 +116,5 @@ def run(
     verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
 ) -> None:
     """Run the full pipeline: transcribe audio, then summarize."""
-    logger.info("Pipeline start: %s", audio)
     transcribe(audio=audio, output=transcript, language=language, verbose=verbose)
     summarize(transcript=transcript, output=summary, model=model, verbose=verbose)
-    logger.info("Pipeline done.")
