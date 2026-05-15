@@ -44,9 +44,17 @@ class LLMSummarizer:
         prompt = self._prompt_template.format(transcript=transcript_text)
         logger.info("Calling %s (model: %s)…", self._base_url or "openai", self._model)
         client = openai.OpenAI(api_key=self._api_key, base_url=self._base_url)
-        with Console(stderr=True).status(f"[bold cyan]Generating summary ({self._model})…[/]"):
-            response = client.chat.completions.create(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-            )
-        return response.choices[0].message.content
+        console = Console(stderr=True)
+        console.print(f"[bold cyan]Generating summary ({self._model})…[/bold cyan]")
+        chunks: list[str] = []
+        with client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,
+        ) as stream:
+            for chunk in stream:
+                if chunk.choices and (delta := chunk.choices[0].delta.content):
+                    console.print(delta, end="", highlight=False, markup=False)
+                    chunks.append(delta)
+        console.print()
+        return "".join(chunks)
