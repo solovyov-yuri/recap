@@ -103,6 +103,7 @@ def summarize(
             model=model or settings.model,
             api_key=settings.api_key,
             base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
+            max_chars=settings.max_transcript_chars,
         )
         raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
@@ -166,6 +167,7 @@ def run(
                 model=model or settings.model,
                 api_key=settings.api_key,
                 base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
+                max_chars=settings.max_transcript_chars,
             ),
             formatter=to_telegram,
             language=language or settings.language,

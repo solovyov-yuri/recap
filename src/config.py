@@ -17,18 +17,20 @@ PROVIDER_PRESETS: dict[str, str | None] = {
 _KNOWN_FIELDS = {
     "audio", "transcript", "summary", "language",
     "whisper_model", "provider", "model", "api_key", "base_url",
+    "max_transcript_chars",
 }
 
 _ENV_MAP: dict[str, str] = {
-    "MEETING_SUM_AUDIO":         "audio",
-    "MEETING_SUM_TRANSCRIPT":    "transcript",
-    "MEETING_SUM_SUMMARY":       "summary",
-    "MEETING_SUM_LANGUAGE":      "language",
-    "MEETING_SUM_WHISPER_MODEL": "whisper_model",
-    "MEETING_SUM_PROVIDER":      "provider",
-    "MEETING_SUM_MODEL":         "model",
-    "MEETING_SUM_API_KEY":       "api_key",
-    "MEETING_SUM_BASE_URL":      "base_url",
+    "MEETING_SUM_AUDIO":               "audio",
+    "MEETING_SUM_TRANSCRIPT":          "transcript",
+    "MEETING_SUM_SUMMARY":             "summary",
+    "MEETING_SUM_LANGUAGE":            "language",
+    "MEETING_SUM_WHISPER_MODEL":       "whisper_model",
+    "MEETING_SUM_PROVIDER":            "provider",
+    "MEETING_SUM_MODEL":               "model",
+    "MEETING_SUM_API_KEY":             "api_key",
+    "MEETING_SUM_BASE_URL":            "base_url",
+    "MEETING_SUM_MAX_TRANSCRIPT_CHARS": "max_transcript_chars",
 }
 
 
@@ -43,6 +45,7 @@ class Settings:
     model: str = "qwen3.5:latest"
     api_key: str | None = None
     base_url: str | None = None
+    max_transcript_chars: int = 60_000
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:
@@ -67,5 +70,7 @@ class Settings:
         for field in ("audio", "transcript", "summary"):
             if field in data:
                 data[field] = Path(data[field])
+        if "max_transcript_chars" in data:
+            data["max_transcript_chars"] = int(data["max_transcript_chars"])
 
         return cls(**data)
