@@ -23,10 +23,35 @@ NVIDIA CUDA-библиотеки (cublas, cudnn) устанавливаются 
 
 ## Конфигурация
 
-Настройки задаются в `config.yaml`. CLI-опции имеют приоритет над файлом.
+Приоритет: **CLI-флаги > переменные среды > `config.yaml` > умолчания**.
 
 ```bash
 cp config.yaml.example config.yaml
+```
+
+### config.yaml
+
+```yaml
+provider: ollama          # openai | ollama | lm-studio | vllm
+model: qwen3.5:latest
+language: ru
+whisper_model: large-v3
+max_transcript_chars: 60000   # транскрипт обрезается до этого лимита перед отправкой в LLM
+# api_key: sk-...
+# base_url: http://...
+```
+
+`config.yaml` не коммитится (в `.gitignore`). Полный список полей — в `config.yaml.example`.
+
+### Переменные среды
+
+Переопределяют любое поле из `config.yaml`:
+
+```bash
+MEETING_SUM_PROVIDER=openai
+MEETING_SUM_MODEL=gpt-4o-mini
+MEETING_SUM_API_KEY=sk-...        # или стандартный OPENAI_API_KEY
+MEETING_SUM_MAX_TRANSCRIPT_CHARS=30000
 ```
 
 ### Провайдеры
@@ -66,8 +91,6 @@ model: my-model
 base_url: http://my-server:9000/v1
 api_key: secret
 ```
-
-`config.yaml` не коммитится (в `.gitignore`). Полный список полей — в `config.yaml.example`.
 
 ## Использование
 
