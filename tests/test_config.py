@@ -77,6 +77,13 @@ def test_summary_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.summary_mode == "brief"
 
 
+def test_malformed_yaml(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("key: [unclosed bracket\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="not valid YAML"):
+        Settings.load(config_path=cfg)
+
+
 def test_invalid_yaml_not_a_dict(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
     cfg.write_text("- item1\n- item2\n", encoding="utf-8")

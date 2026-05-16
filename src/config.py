@@ -19,8 +19,6 @@ PROVIDER_PRESETS: dict[str, str | None] = {
     "vllm":      "http://localhost:8000/v1",
 }
 
-VALID_SUMMARY_MODES: frozenset[str] = frozenset({"brief", "medium", "detailed"})
-
 _KNOWN_FIELDS = {
     "audio", "transcript", "summary", "language",
     "whisper_model", "provider", "model", "api_key", "base_url",
@@ -64,7 +62,10 @@ class Settings:
             import yaml  # noqa: PLC0415
 
             with config_path.open(encoding="utf-8") as f:
-                raw = yaml.safe_load(f)
+                try:
+                    raw = yaml.safe_load(f)
+                except yaml.YAMLError as exc:
+                    raise ConfigError(f"config.yaml is not valid YAML: {exc}") from exc
             if raw is not None and not isinstance(raw, dict):
                 raise ConfigError(f"config.yaml must be a YAML mapping, got {type(raw).__name__}")
             data = raw or {}
@@ -102,8 +103,11 @@ class Settings:
             available = ", ".join(PROVIDER_PRESETS)
             raise ConfigError(f"'provider' must be one of: {available}. Got {data['provider']!r}")
 
-        if "summary_mode" in data and data["summary_mode"] not in VALID_SUMMARY_MODES:
-            available = ", ".join(sorted(VALID_SUMMARY_MODES))
-            raise ConfigError(f"'summary_mode' must be one of: {available}. Got {data['summary_mode']!r}")
+        if "summary_mode" in data:
+            from prompts import PROMPTS  # noqa: PLC0415
+
+            if data["summary_mode"] not in PROMPTS:
+                available = ", ".join(sorted(PROMPTS))
+                raise ConfigError(f"'summary_mode' must be one of: {available}. Got {data['summary_mode']!r}")
 
         return cls(**data)
