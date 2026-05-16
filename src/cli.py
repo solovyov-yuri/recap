@@ -78,9 +78,7 @@ def batch(
     """Process all audio files in a folder: transcribe and summarize each."""
     from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
     from formatters import to_telegram  # noqa: PLC0415
-    from prompts import PROMPTS  # noqa: PLC0415
-    from providers.llm import LLMSummarizer  # noqa: PLC0415
-    from providers.whisper import WhisperTranscriber  # noqa: PLC0415
+    from providers.factory import make_summarizer, make_transcriber  # noqa: PLC0415
     from utils import write_text_atomic  # noqa: PLC0415
 
     _configure_logging(verbose)
@@ -99,15 +97,11 @@ def batch(
     lang = language or settings.language
     out_dir = output_dir or folder
 
-    if provider_name not in PROVIDER_PRESETS:
-        available = ", ".join(PROVIDER_PRESETS)
-        typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
-        raise typer.Exit(code=1)
-
-    if mode_name not in PROMPTS:
-        available = ", ".join(PROMPTS)
-        typer.echo(f"Unknown mode: {mode_name!r}. Available: {available}", err=True)
-        raise typer.Exit(code=1)
+    try:
+        summarizer = make_summarizer(settings, provider_name, mode_name, model)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
     audio_files = sorted(p for p in folder.iterdir() if p.suffix.lower() in _AUDIO_EXTENSIONS)
 
@@ -136,28 +130,10 @@ def batch(
     _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
     try:
-        transcriber = WhisperTranscriber(
-            model_name=settings.whisper_model,
-            device=settings.whisper_device,
-            compute_type=settings.whisper_compute_type,
-            beam_size=settings.whisper_beam_size,
-            vad_filter=settings.whisper_vad_filter,
-            condition_on_previous_text=settings.whisper_condition_on_previous_text,
-        )
+        transcriber = make_transcriber(settings)
     except Exception as exc:
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc
-
-    summarizer = LLMSummarizer(
-        model=model or settings.model,
-        api_key=settings.api_key,
-        base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
-        max_chars=settings.max_transcript_chars,
-        prompt_template=PROMPTS[mode_name],
-        timeout=settings.llm_timeout_seconds,
-        max_retries=settings.llm_retries,
-        chunking_mode=settings.chunking_mode,
-    )
 
     failures: list[tuple[Path, Exception]] = []
     succeeded = 0
@@ -210,16 +186,9 @@ def transcribe(
     _ensure_output(output_path)
     logger.info("Transcribing: %s", audio_path)
     try:
-        from providers.whisper import WhisperTranscriber  # noqa: PLC0415
+        from providers.factory import make_transcriber  # noqa: PLC0415
 
-        transcriber = WhisperTranscriber(
-            model_name=settings.whisper_model,
-            device=settings.whisper_device,
-            compute_type=settings.whisper_compute_type,
-            beam_size=settings.whisper_beam_size,
-            vad_filter=settings.whisper_vad_filter,
-            condition_on_previous_text=settings.whisper_condition_on_previous_text,
-        )
+        transcriber = make_transcriber(settings)
     except Exception as exc:
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -246,7 +215,6 @@ def summarize(
 ) -> None:
     """Generate a Telegram-formatted meeting summary from a transcript."""
     from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
-    from prompts import PROMPTS  # noqa: PLC0415
 
     _configure_logging(verbose)
     try:
@@ -262,21 +230,17 @@ def summarize(
     provider_name = provider or settings.provider
     mode_name = mode or settings.summary_mode
 
-    if provider_name not in PROVIDER_PRESETS:
-        available = ", ".join(PROVIDER_PRESETS)
-        typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
-        raise typer.Exit(code=1)
-
-    if mode_name not in PROMPTS:
-        available = ", ".join(PROMPTS)
-        typer.echo(f"Unknown mode: {mode_name!r}. Available: {available}", err=True)
-        raise typer.Exit(code=1)
+    try:
+        from providers.factory import make_summarizer  # noqa: PLC0415
+        summarizer = make_summarizer(settings, provider_name, mode_name, model)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
     _ensure_output(output_path)
     logger.info("Summarizing: %s via %s (mode: %s)", transcript_path, provider_name, mode_name)
 
     from formatters import to_telegram  # noqa: PLC0415
-    from providers.llm import LLMSummarizer  # noqa: PLC0415
     from transcript import Transcript  # noqa: PLC0415
 
     try:
@@ -292,16 +256,6 @@ def summarize(
     _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
     try:
-        summarizer = LLMSummarizer(
-            model=model or settings.model,
-            api_key=settings.api_key,
-            base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
-            max_chars=settings.max_transcript_chars,
-            prompt_template=PROMPTS[mode_name],
-            timeout=settings.llm_timeout_seconds,
-            max_retries=settings.llm_retries,
-            chunking_mode=settings.chunking_mode,
-        )
         raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
     except Exception as exc:
@@ -328,9 +282,6 @@ def run(
     """Run the full pipeline: transcribe audio, then summarize."""
     from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
     from formatters import to_telegram  # noqa: PLC0415
-    from prompts import PROMPTS  # noqa: PLC0415
-    from providers.llm import LLMSummarizer  # noqa: PLC0415
-    from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
     _configure_logging(verbose)
     try:
@@ -348,28 +299,18 @@ def run(
     provider_name = provider or settings.provider
     mode_name = mode or settings.summary_mode
 
-    if provider_name not in PROVIDER_PRESETS:
-        available = ", ".join(PROVIDER_PRESETS)
-        typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
-        raise typer.Exit(code=1)
-
-    if mode_name not in PROMPTS:
-        available = ", ".join(PROMPTS)
-        typer.echo(f"Unknown mode: {mode_name!r}. Available: {available}", err=True)
-        raise typer.Exit(code=1)
+    try:
+        from providers.factory import make_summarizer, make_transcriber  # noqa: PLC0415
+        summarizer = make_summarizer(settings, provider_name, mode_name, model)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
     _ensure_output(transcript_path)
     _ensure_output(summary_path)
 
     try:
-        transcriber = WhisperTranscriber(
-            model_name=settings.whisper_model,
-            device=settings.whisper_device,
-            compute_type=settings.whisper_compute_type,
-            beam_size=settings.whisper_beam_size,
-            vad_filter=settings.whisper_vad_filter,
-            condition_on_previous_text=settings.whisper_condition_on_previous_text,
-        )
+        transcriber = make_transcriber(settings)
     except Exception as exc:
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -390,16 +331,6 @@ def run(
     _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
     try:
-        summarizer = LLMSummarizer(
-            model=model or settings.model,
-            api_key=settings.api_key,
-            base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
-            max_chars=settings.max_transcript_chars,
-            prompt_template=PROMPTS[mode_name],
-            timeout=settings.llm_timeout_seconds,
-            max_retries=settings.llm_retries,
-            chunking_mode=settings.chunking_mode,
-        )
         formatted = to_telegram(summarizer.summarize(tr.to_text()))
     except Exception as exc:
         typer.echo(f"LLM error: {exc}", err=True)
