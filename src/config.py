@@ -26,6 +26,7 @@ _KNOWN_FIELDS = {
     "llm_timeout_seconds", "llm_retries",
     "whisper_device", "whisper_compute_type", "whisper_beam_size",
     "whisper_vad_filter", "whisper_condition_on_previous_text",
+    "chunking_mode",
 }
 
 _ENV_MAP: dict[str, str] = {
@@ -48,6 +49,7 @@ _ENV_MAP: dict[str, str] = {
     "RECAP_WHISPER_BEAM_SIZE":                  "whisper_beam_size",
     "RECAP_WHISPER_VAD_FILTER":                 "whisper_vad_filter",
     "RECAP_WHISPER_CONDITION_ON_PREVIOUS_TEXT": "whisper_condition_on_previous_text",
+    "RECAP_CHUNKING_MODE":                      "chunking_mode",
 }
 
 _VALID_WHISPER_DEVICES = {"cuda", "cpu", "auto"}
@@ -76,6 +78,7 @@ class Settings:
     whisper_beam_size: int = 5
     whisper_vad_filter: bool = True
     whisper_condition_on_previous_text: bool = True
+    chunking_mode: str = "chunk"
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:
@@ -173,6 +176,11 @@ class Settings:
             available = ", ".join(sorted(_VALID_WHISPER_COMPUTE_TYPES))
             raise ConfigError(
                 f"'whisper_compute_type' must be one of: {available}. Got {data['whisper_compute_type']!r}"
+            )
+
+        if "chunking_mode" in data and data["chunking_mode"] not in ("chunk", "truncate"):
+            raise ConfigError(
+                f"'chunking_mode' must be 'chunk' or 'truncate'. Got {data['chunking_mode']!r}"
             )
 
         if "provider" in data and data["provider"] not in PROVIDER_PRESETS:

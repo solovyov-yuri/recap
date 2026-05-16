@@ -61,3 +61,12 @@ PROMPTS: dict[str, tuple[str, str]] = {
     "medium":   (SYSTEM_PROMPT_RU, SUMMARY_PROMPT_MEDIUM_RU),
     "detailed": (SYSTEM_PROMPT_RU, SUMMARY_PROMPT_DETAILED_RU),
 }
+
+CHUNK_PROMPT_RU = """\
+Это фрагмент длинной транскрипции встречи. Кратко выдели ключевые обсуждения, решения и задачи из этого фрагмента. Выводи только список пунктов — без вводных фраз, без структуры.
+
+<transcript>
+{transcript}
+</transcript>"""
+
+CHUNK_PROMPT: tuple[str, str] = (SYSTEM_PROMPT_RU, CHUNK_PROMPT_RU)

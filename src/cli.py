@@ -179,6 +179,7 @@ def summarize(
             prompt_template=PROMPTS[mode_name],
             timeout=settings.llm_timeout_seconds,
             max_retries=settings.llm_retries,
+            chunking_mode=settings.chunking_mode,
         )
         raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
@@ -276,6 +277,7 @@ def run(
             prompt_template=PROMPTS[mode_name],
             timeout=settings.llm_timeout_seconds,
             max_retries=settings.llm_retries,
+            chunking_mode=settings.chunking_mode,
         )
         formatted = to_telegram(summarizer.summarize(tr.to_text()))
     except Exception as exc:

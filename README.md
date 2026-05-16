@@ -36,7 +36,7 @@ provider: ollama          # openai | ollama | lm-studio | vllm
 model: qwen3.5:latest
 language: ru
 whisper_model: large-v3
-max_transcript_chars: 60000   # транскрипт обрезается до этого лимита перед отправкой в LLM
+max_transcript_chars: 60000   # лимит одного LLM-запроса; длинные транскрипты разбиваются на чанки (chunking_mode: chunk)
 # api_key: sk-...
 # base_url: http://...
 ```

@@ -208,3 +208,16 @@ def test_whisper_vad_filter_bool_from_env(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("RECAP_WHISPER_VAD_FILTER", "false")
     s = Settings.load(config_path=Path("nonexistent.yaml"))
     assert s.whisper_vad_filter is False
+
+
+def test_invalid_chunking_mode(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("chunking_mode: stream\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="chunking_mode"):
+        Settings.load(config_path=cfg)
+
+
+def test_chunking_mode_truncate_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_CHUNKING_MODE", "truncate")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.chunking_mode == "truncate"
