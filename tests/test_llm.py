@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 from prompts import (
     CHUNK_PROMPTS,
     PROMPTS,
@@ -299,6 +301,7 @@ def test_non_retryable_error_propagates_immediately(monkeypatch: pytest.MonkeyPa
 
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
+
 
 def test_split_into_chunks_basic() -> None:
     s = LLMSummarizer(model="test", max_chars=10)
