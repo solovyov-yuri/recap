@@ -36,12 +36,43 @@ provider: ollama          # openai | ollama | lm-studio | vllm
 model: qwen3.5:latest
 language: ru
 whisper_model: large-v3
-max_transcript_chars: 60000   # транскрипт обрезается до этого лимита перед отправкой в LLM
+max_transcript_chars: 60000   # лимит одного LLM-запроса; длинные транскрипты разбиваются на чанки (chunking_mode: chunk)
 # api_key: sk-...
 # base_url: http://...
 ```
 
 `config.yaml` не коммитится (в `.gitignore`). Полный список полей — в `config.yaml.example`.
+
+### Настройки Whisper
+
+| Поле | Умолчание | Описание |
+|---|---|---|
+| `whisper_device` | `cuda` | `cuda` / `cpu` / `auto` |
+| `whisper_compute_type` | `default` | `default` / `float16` / `int8` / `int8_float16` / `float32` |
+| `whisper_beam_size` | `5` | Размер луча — точность vs скорость |
+| `whisper_vad_filter` | `true` | Пропускать тихие участки |
+| `whisper_condition_on_previous_text` | `true` | Улучшает связность, отключить для коротких клипов |
+
+`whisper_compute_type: default` автоматически выбирает `float16` для CUDA и `int8` для CPU/auto.
+
+**CPU (без GPU):**
+```yaml
+whisper_device: cpu
+# compute_type подбирается автоматически (int8)
+```
+
+**Авто-определение (GPU если доступен, иначе CPU):**
+```yaml
+whisper_device: auto
+# compute_type подбирается автоматически (int8)
+```
+
+**Явные настройки GPU:**
+```yaml
+whisper_device: cuda
+whisper_compute_type: float16   # быстро и точно
+whisper_beam_size: 1            # ещё быстрее, чуть менее точно
+```
 
 ### Переменные среды
 
@@ -112,6 +143,22 @@ uv run recap run audio.wav -m detailed -p openai
 
 Записывает транскрипцию в `data/transcript.txt`, саммари — в `data/summary.txt`.
 
+### Пакетная обработка
+
+```bash
+uv run recap batch recordings/                    # все аудиофайлы в папке, вывод туда же
+uv run recap batch recordings/ -o out/ -m brief   # в отдельную папку, краткое саммари
+uv run recap batch recordings/ -p openai --model gpt-4o
+```
+
+Поддерживаемые расширения: `.wav`, `.mp3`, `.m4a`, `.ogg`.
+
+Для каждого файла `{name}.{ext}` создаются:
+- `{name}.txt` — транскрипция
+- `{name}_summary.txt` — саммари
+
+Если в папке есть два файла с одинаковым именем, но разными расширениями (`call.wav` и `call.mp3`), команда завершается с ошибкой до обработки — чтобы не затирать результаты. Если отдельные файлы не удалось обработать, batch продолжает работу и в конце выводит счётчик `N succeeded, M failed`; exit code 1 при любых ошибках.
+
 ### По шагам
 
 **Транскрибация:**
@@ -132,10 +179,11 @@ uv run recap summarize call.txt -m detailed -p openai --model gpt-4o
 | Опция | Команды | Описание |
 |---|---|---|
 | `-o, --output PATH` | transcribe, summarize | Файл вывода |
-| `-l, --language TEXT` | transcribe, run | Язык аудио (`ru`, `en`, …) |
-| `-m, --mode TEXT` | summarize, run | Режим: `brief` \| `medium` \| `detailed` |
-| `-p, --provider TEXT` | summarize, run | Провайдер (см. таблицу выше) |
-| `--model TEXT` | summarize, run | Модель LLM (переопределяет config) |
+| `-o, --output-dir PATH` | batch | Папка вывода (по умолчанию — папка с аудио) |
+| `-l, --language TEXT` | transcribe, run, batch | Язык аудио (`ru`, `en`, …) |
+| `-m, --mode TEXT` | summarize, run, batch | Режим: `brief` \| `medium` \| `detailed` |
+| `-p, --provider TEXT` | summarize, run, batch | Провайдер (см. таблицу выше) |
+| `--model TEXT` | summarize, run, batch | Модель LLM (переопределяет config) |
 | `--transcript PATH` | run | Путь для промежуточной транскрипции |
 | `--summary PATH` | run | Путь для саммари |
 | `-v, --verbose` | все | Показывать прогресс |

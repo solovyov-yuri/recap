@@ -253,3 +253,127 @@ def test_non_retryable_error_propagates_immediately(monkeypatch: pytest.MonkeyPa
         summarizer.summarize("content")
 
     assert call_count[0] == 1
+
+
+# ── Chunking ──────────────────────────────────────────────────────────────────
+
+def test_split_into_chunks_basic() -> None:
+    s = LLMSummarizer(model="test", max_chars=10)
+    chunks = s._split_into_chunks("hello\nworld\nfoo")
+    assert len(chunks) == 2
+    assert "hello" in chunks[0]
+    assert "world" in chunks[1] or "foo" in chunks[1]
+
+
+def test_split_into_chunks_fits_in_one() -> None:
+    s = LLMSummarizer(model="test", max_chars=100)
+    chunks = s._split_into_chunks("short line\nanother")
+    assert len(chunks) == 1
+
+
+def test_split_into_chunks_single_long_line() -> None:
+    s = LLMSummarizer(model="test", max_chars=10)
+    long_line = "a" * 25
+    chunks = s._split_into_chunks(long_line)
+    assert len(chunks) == 3
+    assert "".join(chunks) == long_line  # all text preserved, no loss
+
+
+def test_chunked_summarize_all_chunks_processed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Text from each chunk must appear in the merge call — including the last chunk."""
+    call_messages: list[list[dict]] = []
+
+    # LLM returns "ok" (2 chars) so merged summaries stay well within max_chars.
+    class FakeChunk:
+        choices = [type("C", (), {"delta": type("D", (), {"content": "ok"})()})()]
+
+    class FakeStream:
+        def __enter__(self) -> "FakeStream":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+        def __iter__(self):
+            yield FakeChunk()
+
+    class FakeCompletions:
+        def create(self, model: str, messages: list, stream: bool, **kw) -> FakeStream:
+            call_messages.append(messages)
+            return FakeStream()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr("openai.OpenAI", lambda **kw: FakeClient())
+
+    # max_chars=50: lines of 30 chars each force 2 chunks;
+    # merged summaries ("[Часть 1]\nok\n\n[Часть 2]\nok" ≈ 26 chars) fit in one call.
+    max_chars = 50
+    line1 = "a" * 30
+    line2 = "b" * 30
+    long_text = f"{line1}\n{line2}"  # 61 chars > max_chars → 2 chunks
+
+    summarizer = LLMSummarizer(
+        model="test",
+        base_url="http://localhost:1234/v1",
+        max_chars=max_chars,
+        chunking_mode="chunk",
+    )
+    summarizer.summarize(long_text)
+
+    # 3 LLM calls: chunk 1, chunk 2, merge
+    assert len(call_messages) == 3
+
+    user1 = call_messages[0][1]["content"]
+    user2 = call_messages[1][1]["content"]
+    merge_user = call_messages[2][1]["content"]
+
+    assert line1 in user1
+    assert line2 in user2
+    assert "[Часть 1]" in merge_user
+    assert "[Часть 2]" in merge_user
+
+
+def test_truncate_mode_does_not_chunk(monkeypatch: pytest.MonkeyPatch) -> None:
+    call_count = [0]
+
+    class FakeChunk:
+        choices = [type("C", (), {"delta": type("D", (), {"content": "ok"})()})()]
+
+    class FakeStream:
+        def __enter__(self) -> "FakeStream":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+        def __iter__(self):
+            yield FakeChunk()
+
+    class FakeCompletions:
+        def create(self, **kw) -> FakeStream:
+            call_count[0] += 1
+            return FakeStream()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr("openai.OpenAI", lambda **kw: FakeClient())
+
+    long_text = "word " * 100  # longer than max_chars=20
+    summarizer = LLMSummarizer(
+        model="test",
+        base_url="http://localhost:1234/v1",
+        max_chars=20,
+        chunking_mode="truncate",
+    )
+    summarizer.summarize(long_text)
+
+    assert call_count[0] == 1  # only one call — no chunking

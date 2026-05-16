@@ -17,6 +17,23 @@ model: qwen3.5:latest
 # Transcription
 # language: ru
 # whisper_model: large-v3
+#
+# Whisper device and precision:
+#   device: cuda       — GPU (default); requires NVIDIA GPU with CUDA
+#   device: cpu        — CPU only; slower but no GPU required
+#   device: auto       — use GPU if available, otherwise CPU
+# whisper_device: cuda
+#
+#   compute_type: default      — auto-select: float16 for cuda, int8 for cpu/auto (recommended)
+#   compute_type: float16      — GPU-native, fast and accurate (not supported on CPU)
+#   compute_type: int8         — quantized, works on CPU and GPU, less RAM
+#   compute_type: int8_float16 — mixed precision, GPU only
+#   compute_type: float32      — full precision, CPU-compatible
+# whisper_compute_type: default
+#
+# whisper_beam_size: 5                   # higher = more accurate, slower
+# whisper_vad_filter: true               # skip silent segments
+# whisper_condition_on_previous_text: true  # improves coherence, disable for short clips
 
 # Privacy
 # Set to true to suppress the warning when transcript is sent to an external endpoint.
@@ -25,3 +42,7 @@ model: qwen3.5:latest
 # LLM reliability
 # llm_timeout_seconds: 60    # seconds to wait for LLM response before giving up
 # llm_retries: 2             # number of retries on timeout/connection errors (0 = no retries)
+
+# Long transcript handling
+# chunking_mode: chunk       # chunk (default): split into chunks, summarize each, then merge
+#                            # truncate: old behaviour — cut at max_transcript_chars

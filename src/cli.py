@@ -21,6 +21,7 @@ def _configure_logging(verbose: bool) -> None:
 
 
 _LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
+_AUDIO_EXTENSIONS = frozenset({".wav", ".mp3", ".m4a", ".ogg"})
 
 
 def _is_external(base_url: str | None, provider: str) -> bool:
@@ -65,6 +66,126 @@ def _ensure_output(path: Path) -> None:
 
 
 @app.command()
+def batch(
+    folder: Annotated[Path, typer.Argument(file_okay=False, dir_okay=True, help="Folder with audio files to process")],
+    output_dir: Annotated[Optional[Path], typer.Option("-o", "--output-dir", help="Output directory (defaults to folder)")] = None,
+    mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
+    model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
+    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")] = None,
+    language: Annotated[Optional[str], typer.Option("-l", "--language", help="Language code (ru, en, …)")] = None,
+    verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
+) -> None:
+    """Process all audio files in a folder: transcribe and summarize each."""
+    from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
+    from formatters import to_telegram  # noqa: PLC0415
+    from prompts import PROMPTS  # noqa: PLC0415
+    from providers.llm import LLMSummarizer  # noqa: PLC0415
+    from providers.whisper import WhisperTranscriber  # noqa: PLC0415
+    from utils import write_text_atomic  # noqa: PLC0415
+
+    _configure_logging(verbose)
+    try:
+        settings = Settings.load()
+    except ConfigError as exc:
+        typer.echo(f"Configuration error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if not folder.is_dir():
+        typer.echo(f"Error: folder not found: {folder}", err=True)
+        raise typer.Exit(code=1)
+
+    provider_name = provider or settings.provider
+    mode_name = mode or settings.summary_mode
+    lang = language or settings.language
+    out_dir = output_dir or folder
+
+    if provider_name not in PROVIDER_PRESETS:
+        available = ", ".join(PROVIDER_PRESETS)
+        typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
+        raise typer.Exit(code=1)
+
+    if mode_name not in PROMPTS:
+        available = ", ".join(PROMPTS)
+        typer.echo(f"Unknown mode: {mode_name!r}. Available: {available}", err=True)
+        raise typer.Exit(code=1)
+
+    audio_files = sorted(p for p in folder.iterdir() if p.suffix.lower() in _AUDIO_EXTENSIONS)
+
+    if not audio_files:
+        typer.echo(f"No audio files found in {folder}.")
+        return
+
+    from collections import defaultdict  # noqa: PLC0415
+
+    stem_map: defaultdict[str, list[Path]] = defaultdict(list)
+    for p in audio_files:
+        stem_map[p.stem].append(p)
+    collisions = {stem: files for stem, files in stem_map.items() if len(files) > 1}
+    if collisions:
+        typer.echo("Error: output name collisions (same stem, different extension):", err=True)
+        for stem, files in sorted(collisions.items()):
+            typer.echo(f"  {stem!r}: {', '.join(f.name for f in files)}", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        typer.echo(f"Error creating output directory {out_dir}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
+
+    try:
+        transcriber = WhisperTranscriber(
+            model_name=settings.whisper_model,
+            device=settings.whisper_device,
+            compute_type=settings.whisper_compute_type,
+            beam_size=settings.whisper_beam_size,
+            vad_filter=settings.whisper_vad_filter,
+            condition_on_previous_text=settings.whisper_condition_on_previous_text,
+        )
+    except Exception as exc:
+        typer.echo(f"Error loading Whisper model: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    summarizer = LLMSummarizer(
+        model=model or settings.model,
+        api_key=settings.api_key,
+        base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
+        max_chars=settings.max_transcript_chars,
+        prompt_template=PROMPTS[mode_name],
+        timeout=settings.llm_timeout_seconds,
+        max_retries=settings.llm_retries,
+        chunking_mode=settings.chunking_mode,
+    )
+
+    failures: list[tuple[Path, Exception]] = []
+    succeeded = 0
+
+    for audio_path in audio_files:
+        typer.echo(f"\nProcessing: {audio_path.name}")
+        transcript_path = out_dir / f"{audio_path.stem}.txt"
+        summary_path = out_dir / f"{audio_path.stem}_summary.txt"
+        try:
+            tr = transcriber.transcribe(audio_path, lang)
+            write_text_atomic(transcript_path, tr.to_file_format())
+            if tr.is_empty:
+                typer.echo("  No speech detected — summary skipped.", err=True)
+                succeeded += 1
+                continue
+            raw = summarizer.summarize(tr.to_text())
+            write_text_atomic(summary_path, to_telegram(raw))
+            succeeded += 1
+        except Exception as exc:
+            typer.echo(f"  Error: {exc}", err=True)
+            failures.append((audio_path, exc))
+
+    typer.echo(f"\n{succeeded} succeeded, {len(failures)} failed.")
+    if failures:
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def transcribe(
     audio: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
     output: Annotated[Optional[Path], typer.Option("-o", "--output", help="Output transcript file")] = None,
@@ -91,7 +212,14 @@ def transcribe(
     try:
         from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
-        transcriber = WhisperTranscriber(settings.whisper_model)
+        transcriber = WhisperTranscriber(
+            model_name=settings.whisper_model,
+            device=settings.whisper_device,
+            compute_type=settings.whisper_compute_type,
+            beam_size=settings.whisper_beam_size,
+            vad_filter=settings.whisper_vad_filter,
+            condition_on_previous_text=settings.whisper_condition_on_previous_text,
+        )
     except Exception as exc:
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -172,6 +300,7 @@ def summarize(
             prompt_template=PROMPTS[mode_name],
             timeout=settings.llm_timeout_seconds,
             max_retries=settings.llm_retries,
+            chunking_mode=settings.chunking_mode,
         )
         raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
@@ -233,7 +362,14 @@ def run(
     _ensure_output(summary_path)
 
     try:
-        transcriber = WhisperTranscriber(settings.whisper_model)
+        transcriber = WhisperTranscriber(
+            model_name=settings.whisper_model,
+            device=settings.whisper_device,
+            compute_type=settings.whisper_compute_type,
+            beam_size=settings.whisper_beam_size,
+            vad_filter=settings.whisper_vad_filter,
+            condition_on_previous_text=settings.whisper_condition_on_previous_text,
+        )
     except Exception as exc:
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -262,6 +398,7 @@ def run(
             prompt_template=PROMPTS[mode_name],
             timeout=settings.llm_timeout_seconds,
             max_retries=settings.llm_retries,
+            chunking_mode=settings.chunking_mode,
         )
         formatted = to_telegram(summarizer.summarize(tr.to_text()))
     except Exception as exc:

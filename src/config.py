@@ -24,6 +24,9 @@ _KNOWN_FIELDS = {
     "whisper_model", "provider", "model", "api_key", "base_url",
     "max_transcript_chars", "summary_mode", "privacy_ack",
     "llm_timeout_seconds", "llm_retries",
+    "whisper_device", "whisper_compute_type", "whisper_beam_size",
+    "whisper_vad_filter", "whisper_condition_on_previous_text",
+    "chunking_mode",
 }
 
 _ENV_MAP: dict[str, str] = {
@@ -36,12 +39,22 @@ _ENV_MAP: dict[str, str] = {
     "RECAP_MODEL":               "model",
     "RECAP_API_KEY":             "api_key",
     "RECAP_BASE_URL":            "base_url",
-    "RECAP_MAX_TRANSCRIPT_CHARS": "max_transcript_chars",
-    "RECAP_SUMMARY_MODE":         "summary_mode",
-    "RECAP_PRIVACY_ACK":          "privacy_ack",
-    "RECAP_LLM_TIMEOUT":          "llm_timeout_seconds",
-    "RECAP_LLM_RETRIES":          "llm_retries",
+    "RECAP_MAX_TRANSCRIPT_CHARS":               "max_transcript_chars",
+    "RECAP_SUMMARY_MODE":                       "summary_mode",
+    "RECAP_PRIVACY_ACK":                        "privacy_ack",
+    "RECAP_LLM_TIMEOUT":                        "llm_timeout_seconds",
+    "RECAP_LLM_RETRIES":                        "llm_retries",
+    "RECAP_WHISPER_DEVICE":                     "whisper_device",
+    "RECAP_WHISPER_COMPUTE_TYPE":               "whisper_compute_type",
+    "RECAP_WHISPER_BEAM_SIZE":                  "whisper_beam_size",
+    "RECAP_WHISPER_VAD_FILTER":                 "whisper_vad_filter",
+    "RECAP_WHISPER_CONDITION_ON_PREVIOUS_TEXT": "whisper_condition_on_previous_text",
+    "RECAP_CHUNKING_MODE":                      "chunking_mode",
 }
+
+_VALID_WHISPER_DEVICES = {"cuda", "cpu", "auto"}
+_VALID_WHISPER_COMPUTE_TYPES = {"default", "float16", "int8", "int8_float16", "float32"}
+_BOOL_FIELDS = {"privacy_ack", "whisper_vad_filter", "whisper_condition_on_previous_text"}
 
 
 @dataclass(frozen=True)
@@ -60,6 +73,12 @@ class Settings:
     privacy_ack: bool = False
     llm_timeout_seconds: float = 60.0
     llm_retries: int = 2
+    whisper_device: str = "cuda"
+    whisper_compute_type: str = "default"
+    whisper_beam_size: int = 5
+    whisper_vad_filter: bool = True
+    whisper_condition_on_previous_text: bool = True
+    chunking_mode: str = "chunk"
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:
@@ -130,9 +149,39 @@ class Settings:
                     f"'llm_retries' must be >= 0, got {data['llm_retries']}"
                 )
 
-        if "privacy_ack" in data:
-            val = data["privacy_ack"]
-            data["privacy_ack"] = val.lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
+        for field in _BOOL_FIELDS:
+            if field in data:
+                val = data[field]
+                data[field] = val.lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
+
+        if "whisper_beam_size" in data:
+            try:
+                data["whisper_beam_size"] = int(data["whisper_beam_size"])
+            except (ValueError, TypeError):
+                raise ConfigError(
+                    f"'whisper_beam_size' must be a positive integer, got {data['whisper_beam_size']!r}"
+                )
+            if data["whisper_beam_size"] <= 0:
+                raise ConfigError(
+                    f"'whisper_beam_size' must be a positive integer, got {data['whisper_beam_size']}"
+                )
+
+        if "whisper_device" in data and data["whisper_device"] not in _VALID_WHISPER_DEVICES:
+            available = ", ".join(sorted(_VALID_WHISPER_DEVICES))
+            raise ConfigError(
+                f"'whisper_device' must be one of: {available}. Got {data['whisper_device']!r}"
+            )
+
+        if "whisper_compute_type" in data and data["whisper_compute_type"] not in _VALID_WHISPER_COMPUTE_TYPES:
+            available = ", ".join(sorted(_VALID_WHISPER_COMPUTE_TYPES))
+            raise ConfigError(
+                f"'whisper_compute_type' must be one of: {available}. Got {data['whisper_compute_type']!r}"
+            )
+
+        if "chunking_mode" in data and data["chunking_mode"] not in ("chunk", "truncate"):
+            raise ConfigError(
+                f"'chunking_mode' must be 'chunk' or 'truncate'. Got {data['chunking_mode']!r}"
+            )
 
         if "provider" in data and data["provider"] not in PROVIDER_PRESETS:
             available = ", ".join(PROVIDER_PRESETS)
