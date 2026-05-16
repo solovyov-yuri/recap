@@ -20,7 +20,7 @@ class LLMSummarizer:
         model: str,
         api_key: str | None = None,
         base_url: str | None = None,
-        prompt_template: str = SUMMARY_PROMPT_MEDIUM_RU,
+        prompt_template: str | tuple[str, str] = PROMPTS["medium"],
         max_chars: int = 60_000,
     ) -> None:
         self._model = model
@@ -28,6 +28,19 @@ class LLMSummarizer:
         self._base_url = base_url
         self._prompt_template = prompt_template
         self._max_chars = max_chars
+
+    def _build_messages(self, transcript_text: str) -> list[dict[str, str]]:
+        if isinstance(self._prompt_template, str):
+            from prompts import SYSTEM_PROMPT_RU  # noqa: PLC0415
+
+            system, user_template = SYSTEM_PROMPT_RU, self._prompt_template
+        else:
+            system, user_template = self._prompt_template
+        user = user_template.replace("{transcript}", transcript_text)
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
 
     def summarize(self, transcript_text: str) -> str:
         import openai  # noqa: PLC0415 — deferred to keep CLI startup fast
@@ -39,7 +52,7 @@ class LLMSummarizer:
                 len(transcript_text), self._max_chars,
             )
             transcript_text = _truncate(transcript_text, self._max_chars)
-        prompt = self._prompt_template.replace("{transcript}", transcript_text)
+        messages = self._build_messages(transcript_text)
         logger.info("Calling %s (model: %s)…", self._base_url or "openai", self._model)
         client = openai.OpenAI(
             api_key=self._api_key or ("local" if self._base_url else None),
@@ -50,7 +63,7 @@ class LLMSummarizer:
         chunks: list[str] = []
         with client.chat.completions.create(
             model=self._model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             stream=True,
         ) as stream:
             for chunk in stream:
