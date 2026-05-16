@@ -8,17 +8,18 @@ from config import ConfigError, Settings
 
 def test_defaults() -> None:
     s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.language == "ru"
+    assert s.transcription_language == "ru"
+    assert s.summary_language is None
     assert s.provider == "ollama"
     assert s.api_key is None
 
 
 def test_env_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RECAP_MODEL", "gpt-4o")
-    monkeypatch.setenv("RECAP_LANGUAGE", "en")
+    monkeypatch.setenv("RECAP_TRANSCRIPTION_LANGUAGE", "en")
     s = Settings.load(config_path=Path("nonexistent.yaml"))
     assert s.model == "gpt-4o"
-    assert s.language == "en"
+    assert s.transcription_language == "en"
 
 
 def test_openai_api_key_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,9 +38,9 @@ def test_meeting_sum_api_key_takes_priority(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_yaml_overrides_defaults(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("language: en\nmodel: mistral\n", encoding="utf-8")
+    cfg.write_text("transcription_language: en\nmodel: mistral\n", encoding="utf-8")
     s = Settings.load(config_path=cfg)
-    assert s.language == "en"
+    assert s.transcription_language == "en"
     assert s.model == "mistral"
 
 
@@ -53,9 +54,9 @@ def test_env_overrides_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_unknown_yaml_key_ignored(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("unknown_key: value\nlanguage: en\n", encoding="utf-8")
+    cfg.write_text("unknown_key: value\ntranscription_language: en\n", encoding="utf-8")
     s = Settings.load(config_path=cfg)
-    assert s.language == "en"
+    assert s.transcription_language == "en"
 
 
 def test_path_fields_converted(tmp_path: Path) -> None:
@@ -221,3 +222,62 @@ def test_chunking_mode_truncate_valid(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RECAP_CHUNKING_MODE", "truncate")
     s = Settings.load(config_path=Path("nonexistent.yaml"))
     assert s.chunking_mode == "truncate"
+
+
+def test_summary_language_defaults_to_none() -> None:
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.summary_language is None
+
+
+def test_summary_language_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_SUMMARY_LANGUAGE", "ru")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.summary_language == "ru"
+
+
+def test_summary_language_yaml(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summary_language: ru\n", encoding="utf-8")
+    s = Settings.load(config_path=cfg)
+    assert s.summary_language == "ru"
+
+
+def test_invalid_summary_language(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summary_language: en\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="summary_language"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_summary_language_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_SUMMARY_LANGUAGE", "fr")
+    with pytest.raises(ConfigError, match="summary_language"):
+        Settings.load(config_path=Path("nonexistent.yaml"))
+
+
+def test_deprecated_language_yaml_remapped(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("language: en\n", encoding="utf-8")
+    s = Settings.load(config_path=cfg)
+    assert s.transcription_language == "en"
+
+
+def test_deprecated_language_yaml_ignored_when_new_key_present(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("language: en\ntranscription_language: fr\n", encoding="utf-8")
+    s = Settings.load(config_path=cfg)
+    assert s.transcription_language == "fr"
+
+
+def test_deprecated_recap_language_env_remapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_LANGUAGE", "de")
+    monkeypatch.delenv("RECAP_TRANSCRIPTION_LANGUAGE", raising=False)
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.transcription_language == "de"
+
+
+def test_deprecated_recap_language_env_ignored_when_new_env_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_LANGUAGE", "de")
+    monkeypatch.setenv("RECAP_TRANSCRIPTION_LANGUAGE", "fr")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.transcription_language == "fr"

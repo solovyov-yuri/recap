@@ -8,19 +8,28 @@ def make_summarizer(
     provider_name: str,
     mode_name: str,
     model_override: str | None = None,
+    summary_language: str | None = None,
 ) -> "LLMSummarizer":
-    """Validate provider and mode, then build an LLMSummarizer.
+    """Validate provider, mode, and language, then build an LLMSummarizer.
 
-    Raises ValueError for unknown provider or mode.
+    Raises ValueError for unknown provider, mode, or language.
     """
-    from prompts import PROMPTS  # noqa: PLC0415
+    from prompts import CHUNK_PROMPTS, PROMPTS, get_prompt  # noqa: PLC0415
 
     if provider_name not in PROVIDER_PRESETS:
         available = ", ".join(PROVIDER_PRESETS)
         raise ValueError(f"Unknown provider: {provider_name!r}. Available: {available}")
-    if mode_name not in PROMPTS:
-        available = ", ".join(PROMPTS)
-        raise ValueError(f"Unknown mode: {mode_name!r}. Available: {available}")
+
+    # Default to "ru" — the only language with prompt content shipped.
+    # transcription_language is NOT inherited here so that -l en (English audio)
+    # still produces a Russian summary without requiring --summary-language ru.
+    effective_lang = summary_language or settings.summary_language or "ru"
+    try:
+        prompt_template = get_prompt(effective_lang, mode_name)
+    except KeyError as exc:
+        raise ValueError(str(exc)) from exc
+
+    chunk_prompt = CHUNK_PROMPTS.get(effective_lang, CHUNK_PROMPTS["ru"])
 
     from providers.llm import LLMSummarizer  # noqa: PLC0415
 
@@ -29,7 +38,8 @@ def make_summarizer(
         api_key=settings.api_key,
         base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
         max_chars=settings.max_transcript_chars,
-        prompt_template=PROMPTS[mode_name],
+        prompt_template=prompt_template,
+        chunk_prompt=chunk_prompt,
         timeout=settings.llm_timeout_seconds,
         max_retries=settings.llm_retries,
         chunking_mode=settings.chunking_mode,

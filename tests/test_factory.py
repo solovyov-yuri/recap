@@ -14,7 +14,7 @@ def test_make_summarizer_unknown_provider() -> None:
 
 
 def test_make_summarizer_unknown_mode() -> None:
-    with pytest.raises(ValueError, match="mode"):
+    with pytest.raises(ValueError, match="not available|Unsupported"):
         make_summarizer(Settings(), "ollama", "ultra")
 
 
@@ -105,3 +105,55 @@ def test_make_transcriber_passes_settings(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert captured["model_name"] == "medium"
     assert captured["device"] == "cpu"
+
+
+def test_make_summarizer_uses_summary_language(monkeypatch: pytest.MonkeyPatch) -> None:
+    import providers.llm as llm_mod
+    from prompts import PROMPTS
+
+    captured: dict = {}
+
+    def fake_init(self: object, **kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "__init__", fake_init)
+    make_summarizer(Settings(), "ollama", "brief", summary_language="ru")
+
+    assert captured["prompt_template"] is PROMPTS["ru"]["brief"]
+
+
+def test_make_summarizer_defaults_to_ru_when_no_summary_language(monkeypatch: pytest.MonkeyPatch) -> None:
+    import providers.llm as llm_mod
+    from prompts import PROMPTS
+
+    captured: dict = {}
+
+    def fake_init(self: object, **kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "__init__", fake_init)
+    # Even with transcription_language="en", summary defaults to "ru".
+    settings = dataclasses.replace(Settings(), transcription_language="en", summary_language=None)
+    make_summarizer(settings, "ollama", "medium")
+
+    assert captured["prompt_template"] is PROMPTS["ru"]["medium"]
+
+
+def test_make_summarizer_unknown_summary_language() -> None:
+    with pytest.raises(ValueError, match="Unsupported summary language"):
+        make_summarizer(Settings(), "ollama", "medium", summary_language="en")
+
+
+def test_make_summarizer_chunk_prompt_matches_language(monkeypatch: pytest.MonkeyPatch) -> None:
+    import providers.llm as llm_mod
+    from prompts import CHUNK_PROMPTS
+
+    captured: dict = {}
+
+    def fake_init(self: object, **kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "__init__", fake_init)
+    make_summarizer(Settings(), "ollama", "medium", summary_language="ru")
+
+    assert captured["chunk_prompt"] is CHUNK_PROMPTS["ru"]
