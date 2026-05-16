@@ -21,3 +21,7 @@ model: qwen3.5:latest
 # Privacy
 # Set to true to suppress the warning when transcript is sent to an external endpoint.
 # privacy_ack: false
+
+# LLM reliability
+# llm_timeout_seconds: 60    # seconds to wait for LLM response before giving up
+# llm_retries: 2             # number of retries on timeout/connection errors (0 = no retries)

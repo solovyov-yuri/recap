@@ -76,3 +76,19 @@ def test_to_file_format_no_timestamp() -> None:
     tr = Transcript(segments=(Segment(0.0, 0.0, "Без времени"),))
     assert "Без времени" in tr.to_file_format()
     assert "[" not in tr.to_file_format()
+
+
+def test_is_empty_no_segments() -> None:
+    assert Transcript(segments=()).is_empty
+
+
+def test_is_empty_all_blank_text() -> None:
+    assert Transcript(segments=(Segment(0.0, 1.0, ""),)).is_empty
+
+
+def test_is_empty_whitespace_only() -> None:
+    assert Transcript(segments=(Segment(0.0, 1.0, "   "),)).is_empty
+
+
+def test_is_not_empty() -> None:
+    assert not Transcript(segments=(Segment(0.0, 1.0, "hello"),)).is_empty

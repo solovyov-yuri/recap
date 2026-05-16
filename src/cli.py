@@ -45,6 +45,16 @@ def _warn_if_external(base_url: str | None, provider: str, privacy_ack: bool) ->
     )
 
 
+def _write_atomic(path: Path, text: str, label: str) -> None:
+    from utils import write_text_atomic  # noqa: PLC0415
+
+    try:
+        write_text_atomic(path, text)
+    except OSError as exc:
+        typer.echo(f"Error writing {label} to {path.resolve()}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 def _ensure_output(path: Path) -> None:
     if path.is_dir():
         typer.echo(f"Error: output path is a directory: {path}", err=True)
@@ -93,11 +103,7 @@ def transcribe(
         raise typer.Exit(code=1) from exc
 
     logger.info("Writing transcript to %s", output_path.resolve())
-    try:
-        output_path.write_text(transcript.to_file_format(), encoding="utf-8")
-    except OSError as exc:
-        typer.echo(f"Error writing transcript to {output_path.resolve()}: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+    _write_atomic(output_path, transcript.to_file_format(), "transcript")
     typer.echo(f"Transcript saved to {output_path}")
 
 
@@ -140,7 +146,6 @@ def summarize(
 
     _ensure_output(output_path)
     logger.info("Summarizing: %s via %s (mode: %s)", transcript_path, provider_name, mode_name)
-    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
     from formatters import to_telegram  # noqa: PLC0415
     from providers.llm import LLMSummarizer  # noqa: PLC0415
@@ -152,6 +157,12 @@ def summarize(
         typer.echo(f"Error reading transcript: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
+    if tr.is_empty:
+        typer.echo("Error: no speech detected in transcript.", err=True)
+        raise typer.Exit(code=1)
+
+    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
+
     try:
         summarizer = LLMSummarizer(
             model=model or settings.model,
@@ -159,6 +170,8 @@ def summarize(
             base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
             max_chars=settings.max_transcript_chars,
             prompt_template=PROMPTS[mode_name],
+            timeout=settings.llm_timeout_seconds,
+            max_retries=settings.llm_retries,
         )
         raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
@@ -168,11 +181,7 @@ def summarize(
 
     typer.echo(summary)
     logger.info("Writing summary to %s", output_path.resolve())
-    try:
-        output_path.write_text(summary, encoding="utf-8")
-    except OSError as exc:
-        typer.echo(f"Error writing summary to {output_path.resolve()}: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+    _write_atomic(output_path, summary, "summary")
     typer.echo(f"\nSummary saved to {output_path}")
 
 
@@ -235,12 +244,13 @@ def run(
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    try:
-        transcript_path.write_text(tr.to_file_format(), encoding="utf-8")
-    except OSError as exc:
-        typer.echo(f"Error writing transcript to {transcript_path.resolve()}: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+    _write_atomic(transcript_path, tr.to_file_format(), "transcript")
     typer.echo(f"Transcript saved to {transcript_path}")
+
+    if tr.is_empty:
+        typer.echo("No speech detected in transcript — summary skipped.", err=True)
+        raise typer.Exit(code=1)
+
     _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
     try:
@@ -250,6 +260,8 @@ def run(
             base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
             max_chars=settings.max_transcript_chars,
             prompt_template=PROMPTS[mode_name],
+            timeout=settings.llm_timeout_seconds,
+            max_retries=settings.llm_retries,
         )
         formatted = to_telegram(summarizer.summarize(tr.to_text()))
     except Exception as exc:
@@ -257,9 +269,5 @@ def run(
         raise typer.Exit(code=1) from exc
 
     typer.echo(formatted)
-    try:
-        summary_path.write_text(formatted, encoding="utf-8")
-    except OSError as exc:
-        typer.echo(f"Error writing summary to {summary_path.resolve()}: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+    _write_atomic(summary_path, formatted, "summary")
     typer.echo(f"\nSummary saved to {summary_path}")

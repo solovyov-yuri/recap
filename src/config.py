@@ -23,6 +23,7 @@ _KNOWN_FIELDS = {
     "audio", "transcript", "summary", "language",
     "whisper_model", "provider", "model", "api_key", "base_url",
     "max_transcript_chars", "summary_mode", "privacy_ack",
+    "llm_timeout_seconds", "llm_retries",
 }
 
 _ENV_MAP: dict[str, str] = {
@@ -38,6 +39,8 @@ _ENV_MAP: dict[str, str] = {
     "RECAP_MAX_TRANSCRIPT_CHARS": "max_transcript_chars",
     "RECAP_SUMMARY_MODE":         "summary_mode",
     "RECAP_PRIVACY_ACK":          "privacy_ack",
+    "RECAP_LLM_TIMEOUT":          "llm_timeout_seconds",
+    "RECAP_LLM_RETRIES":          "llm_retries",
 }
 
 
@@ -55,6 +58,8 @@ class Settings:
     max_transcript_chars: int = 60_000
     summary_mode: str = "medium"
     privacy_ack: bool = False
+    llm_timeout_seconds: float = 60.0
+    llm_retries: int = 2
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:
@@ -99,6 +104,30 @@ class Settings:
             if data["max_transcript_chars"] <= 0:
                 raise ConfigError(
                     f"'max_transcript_chars' must be a positive integer, got {data['max_transcript_chars']}"
+                )
+
+        if "llm_timeout_seconds" in data:
+            try:
+                data["llm_timeout_seconds"] = float(data["llm_timeout_seconds"])
+            except (ValueError, TypeError):
+                raise ConfigError(
+                    f"'llm_timeout_seconds' must be a number, got {data['llm_timeout_seconds']!r}"
+                )
+            if data["llm_timeout_seconds"] <= 0:
+                raise ConfigError(
+                    f"'llm_timeout_seconds' must be positive, got {data['llm_timeout_seconds']}"
+                )
+
+        if "llm_retries" in data:
+            try:
+                data["llm_retries"] = int(data["llm_retries"])
+            except (ValueError, TypeError):
+                raise ConfigError(
+                    f"'llm_retries' must be a non-negative integer, got {data['llm_retries']!r}"
+                )
+            if data["llm_retries"] < 0:
+                raise ConfigError(
+                    f"'llm_retries' must be >= 0, got {data['llm_retries']}"
                 )
 
         if "privacy_ack" in data:

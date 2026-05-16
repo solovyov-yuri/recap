@@ -145,6 +145,48 @@ def test_privacy_warning_suppressed_by_privacy_ack(tmp_path: Path, monkeypatch: 
     assert "Warning" not in result.output
 
 
+def test_summarize_empty_transcript_exits(tmp_path: Path) -> None:
+    transcript = tmp_path / "empty.txt"
+    transcript.write_text("", encoding="utf-8")
+    result = runner.invoke(app, ["summarize", str(transcript), "-p", "ollama", "-o", str(tmp_path / "out.txt")])
+    assert result.exit_code == 1
+    assert "no speech" in result.output.lower()
+
+
+def test_run_empty_transcription_saves_transcript_and_exits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    audio = tmp_path / "silent.wav"
+    audio.write_bytes(b"\x00" * 16)
+    transcript_file = tmp_path / "out.txt"
+    summary_file = tmp_path / "summary.txt"
+
+    from transcript import Transcript
+    import providers.llm as llm_mod
+    import providers.whisper as whisper_mod
+
+    empty_tr = Transcript(segments=())
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, model_name="large-v3": None)
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "transcribe", lambda self, audio, language="ru": empty_tr)
+
+    llm_called = [False]
+
+    def should_not_be_called(self: object, text: str) -> str:
+        llm_called[0] = True
+        return "summary"
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", should_not_be_called)
+
+    result = runner.invoke(app, [
+        "run", str(audio),
+        "--transcript", str(transcript_file),
+        "--summary", str(summary_file),
+    ])
+
+    assert result.exit_code == 1
+    assert "no speech" in result.output.lower()
+    assert transcript_file.exists(), "transcript must be saved even when empty"
+    assert not llm_called[0], "LLM must not be called for empty transcript"
+
+
 def test_transcribe_whisper_load_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     audio = tmp_path / "test.wav"
     audio.write_bytes(b"\x00" * 16)

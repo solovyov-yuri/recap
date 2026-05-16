@@ -36,6 +36,10 @@ class Transcript:
                 segments.append(Segment(start=0.0, end=0.0, text=line))
         return cls(segments=tuple(segments))
 
+    @property
+    def is_empty(self) -> bool:
+        return not self.to_text().strip()
+
     def to_text(self) -> str:
         """Plain text without timestamps — for LLM input."""
         return "\n".join(s.text for s in self.segments if s.text)
