@@ -22,8 +22,9 @@ def _make_fake_faster_whisper(captured: dict):
         def __init__(self, model_name: str, device: str = "cuda", compute_type: str = "float16") -> None:
             captured.update(model_name=model_name, device=device, compute_type=compute_type)
 
-        def transcribe(self, audio: str, language: str, beam_size: int, vad_filter: bool,
-                       condition_on_previous_text: bool):
+        def transcribe(
+            self, audio: str, language: str, beam_size: int, vad_filter: bool, condition_on_previous_text: bool
+        ):
             captured.update(
                 beam_size=beam_size,
                 vad_filter=vad_filter,
