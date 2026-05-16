@@ -51,14 +51,31 @@ def _set_cuda_paths() -> None:
 
 
 class WhisperTranscriber:
-    def __init__(self, model_name: str = "large-v3") -> None:
+    def __init__(
+        self,
+        model_name: str = "large-v3",
+        device: str = "cuda",
+        compute_type: str = "default",
+        beam_size: int = 5,
+        vad_filter: bool = True,
+        condition_on_previous_text: bool = True,
+    ) -> None:
         _set_cuda_paths()
         from faster_whisper import WhisperModel  # noqa: PLC0415
         from rich.console import Console  # noqa: PLC0415
 
+        self._beam_size = beam_size
+        self._vad_filter = vad_filter
+        self._condition_on_previous_text = condition_on_previous_text
+
+        # "default": float16 for CUDA (fast, GPU-native); int8 for CPU/auto (CPU-compatible).
+        if compute_type == "default":
+            compute_type = "float16" if device == "cuda" else "int8"
+            logger.info("compute_type resolved to %r for device=%r", compute_type, device)
+
         with Console(stderr=True).status(f"[bold cyan]Loading model {model_name}…[/]"):
-            self._model = WhisperModel(model_name, device="cuda", compute_type="float16")
-        logger.info("Model %s loaded.", model_name)
+            self._model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        logger.info("Model %s loaded on %s.", model_name, device)
 
     def transcribe(self, audio: Path, language: str = "ru") -> Transcript:
         from rich.console import Console  # noqa: PLC0415
@@ -68,9 +85,9 @@ class WhisperTranscriber:
         segments_iter, info = self._model.transcribe(
             str(audio),
             language=language,
-            beam_size=5,
-            vad_filter=True,
-            condition_on_previous_text=True,
+            beam_size=self._beam_size,
+            vad_filter=self._vad_filter,
+            condition_on_previous_text=self._condition_on_previous_text,
         )
         with Progress(
             TextColumn("[bold cyan]{task.description}"),

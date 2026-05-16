@@ -91,7 +91,14 @@ def transcribe(
     try:
         from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
-        transcriber = WhisperTranscriber(settings.whisper_model)
+        transcriber = WhisperTranscriber(
+            model_name=settings.whisper_model,
+            device=settings.whisper_device,
+            compute_type=settings.whisper_compute_type,
+            beam_size=settings.whisper_beam_size,
+            vad_filter=settings.whisper_vad_filter,
+            condition_on_previous_text=settings.whisper_condition_on_previous_text,
+        )
     except Exception as exc:
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -233,7 +240,14 @@ def run(
     _ensure_output(summary_path)
 
     try:
-        transcriber = WhisperTranscriber(settings.whisper_model)
+        transcriber = WhisperTranscriber(
+            model_name=settings.whisper_model,
+            device=settings.whisper_device,
+            compute_type=settings.whisper_compute_type,
+            beam_size=settings.whisper_beam_size,
+            vad_filter=settings.whisper_vad_filter,
+            condition_on_previous_text=settings.whisper_condition_on_previous_text,
+        )
     except Exception as exc:
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc

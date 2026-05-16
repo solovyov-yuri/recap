@@ -169,3 +169,42 @@ def test_llm_retries_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RECAP_LLM_RETRIES", "0")
     s = Settings.load(config_path=Path("nonexistent.yaml"))
     assert s.llm_retries == 0
+
+
+def test_invalid_whisper_device(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("whisper_device: gpu\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="whisper_device"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_whisper_compute_type(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("whisper_compute_type: bfloat16\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="whisper_compute_type"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_whisper_beam_size_not_a_number(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("whisper_beam_size: fast\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="whisper_beam_size"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_whisper_beam_size_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_WHISPER_BEAM_SIZE", "0")
+    with pytest.raises(ConfigError, match="whisper_beam_size"):
+        Settings.load(config_path=Path("nonexistent.yaml"))
+
+
+def test_whisper_device_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_WHISPER_DEVICE", "cpu")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.whisper_device == "cpu"
+
+
+def test_whisper_vad_filter_bool_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_WHISPER_VAD_FILTER", "false")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.whisper_vad_filter is False

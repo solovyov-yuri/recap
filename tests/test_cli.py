@@ -89,7 +89,7 @@ def test_run_saves_transcript_before_llm_failure(tmp_path: Path, monkeypatch: py
     import providers.llm as llm_mod
     import providers.whisper as whisper_mod
 
-    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, model_name="large-v3": None)
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, **kwargs: None)
     monkeypatch.setattr(whisper_mod.WhisperTranscriber, "transcribe", lambda self, audio, language="ru": fake_tr)
 
     def bad_summarize(self: object, text: str) -> str:
@@ -164,7 +164,7 @@ def test_run_empty_transcription_saves_transcript_and_exits(tmp_path: Path, monk
     import providers.whisper as whisper_mod
 
     empty_tr = Transcript(segments=())
-    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, model_name="large-v3": None)
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, **kwargs: None)
     monkeypatch.setattr(whisper_mod.WhisperTranscriber, "transcribe", lambda self, audio, language="ru": empty_tr)
 
     llm_called = [False]
