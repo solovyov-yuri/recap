@@ -11,7 +11,7 @@ def _truncate(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     cut = text.rfind("\n", 0, max_chars)
-    return text[:cut if cut != -1 else max_chars]
+    return text[: cut if cut != -1 else max_chars]
 
 
 class LLMSummarizer:
@@ -59,8 +59,9 @@ class LLMSummarizer:
 
     def _call_llm(self, messages: list[dict[str, str]], client, console) -> str:
         """Make one streaming LLM call with retry. Returns the full response string."""
-        import openai  # noqa: PLC0415
         import time  # noqa: PLC0415
+
+        import openai  # noqa: PLC0415
 
         _RETRYABLE = (openai.APITimeoutError, openai.APIConnectionError, openai.InternalServerError)
         last_exc: Exception | None = None
@@ -68,7 +69,9 @@ class LLMSummarizer:
             if attempt > 0:
                 logger.warning(
                     "LLM request failed, retrying (%d/%d): %s",
-                    attempt, self._max_retries, last_exc,
+                    attempt,
+                    self._max_retries,
+                    last_exc,
                 )
                 time.sleep(self._retry_backoff)
             try:
@@ -110,7 +113,7 @@ class LLMSummarizer:
                     current = []
                     current_len = 0
                 for start in range(0, len(line), self._max_chars):
-                    chunks.append(line[start:start + self._max_chars])
+                    chunks.append(line[start : start + self._max_chars])
                 continue
             line_len = len(line) + 1  # +1 for the newline
             if current_len + line_len > self._max_chars and current:
@@ -163,7 +166,8 @@ class LLMSummarizer:
         if len(transcript_text) > self._max_chars and self._chunking_mode == "truncate":
             logger.warning(
                 "Transcript truncated from %d to %d chars to fit context window.",
-                len(transcript_text), self._max_chars,
+                len(transcript_text),
+                self._max_chars,
             )
             transcript_text = _truncate(transcript_text, self._max_chars)
 

@@ -22,7 +22,7 @@ dependencies = [
 recap = "cli:app"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.9", "mypy>=1.15"]
 
 [tool.hatch.build.targets.wheel]
 sources = {"src" = ""}
@@ -34,3 +34,23 @@ include = [
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cli", "config", "formatters", "models", "pipeline", "prompts", "protocols", "providers", "transcript", "utils"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+ignore_missing_imports = true
+explicit_package_bases = true
+mypy_path = "src"
+warn_unused_ignores = true
+warn_return_any = false
