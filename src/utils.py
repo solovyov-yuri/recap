@@ -5,10 +5,11 @@ from pathlib import Path
 
 
 def write_text_atomic(path: Path, text: str) -> None:
-    """Write text to path atomically: write to a unique tmp file, then rename.
+    """Write text to path atomically via a unique tmp file + rename.
 
-    Uses a unique temp filename in the same directory so concurrent writes
-    to different outputs don't collide on the same .tmp sidecar.
+    A unique filename in the same directory ensures the rename is on the same
+    filesystem (required for atomic replace) and avoids collisions when multiple
+    outputs are written concurrently.
     """
     with tempfile.NamedTemporaryFile(
         mode="w",
