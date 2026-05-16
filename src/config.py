@@ -20,7 +20,7 @@ PROVIDER_PRESETS: dict[str, str | None] = {
 }
 
 _KNOWN_FIELDS = {
-    "audio", "transcript", "summary", "language",
+    "audio", "transcript", "summary", "transcription_language", "summary_language",
     "whisper_model", "provider", "model", "api_key", "base_url",
     "max_transcript_chars", "summary_mode", "privacy_ack",
     "llm_timeout_seconds", "llm_retries",
@@ -30,15 +30,16 @@ _KNOWN_FIELDS = {
 }
 
 _ENV_MAP: dict[str, str] = {
-    "RECAP_AUDIO":               "audio",
-    "RECAP_TRANSCRIPT":          "transcript",
-    "RECAP_SUMMARY":             "summary",
-    "RECAP_LANGUAGE":            "language",
-    "RECAP_WHISPER_MODEL":       "whisper_model",
-    "RECAP_PROVIDER":            "provider",
-    "RECAP_MODEL":               "model",
-    "RECAP_API_KEY":             "api_key",
-    "RECAP_BASE_URL":            "base_url",
+    "RECAP_AUDIO":                    "audio",
+    "RECAP_TRANSCRIPT":               "transcript",
+    "RECAP_SUMMARY":                  "summary",
+    "RECAP_TRANSCRIPTION_LANGUAGE":   "transcription_language",
+    "RECAP_SUMMARY_LANGUAGE":         "summary_language",
+    "RECAP_WHISPER_MODEL":            "whisper_model",
+    "RECAP_PROVIDER":                 "provider",
+    "RECAP_MODEL":                    "model",
+    "RECAP_API_KEY":                  "api_key",
+    "RECAP_BASE_URL":                 "base_url",
     "RECAP_MAX_TRANSCRIPT_CHARS":               "max_transcript_chars",
     "RECAP_SUMMARY_MODE":                       "summary_mode",
     "RECAP_PRIVACY_ACK":                        "privacy_ack",
@@ -62,7 +63,8 @@ class Settings:
     audio: Path = Path("data/meeting.wav")
     transcript: Path = Path("data/transcript.txt")
     summary: Path = Path("data/summary.txt")
-    language: str = "ru"
+    transcription_language: str = "ru"
+    summary_language: str | None = None
     whisper_model: str = "large-v3"
     provider: str = "ollama"
     model: str = "qwen3.5:latest"
@@ -95,6 +97,19 @@ class Settings:
             if raw is not None and not isinstance(raw, dict):
                 raise ConfigError(f"config.yaml must be a YAML mapping, got {type(raw).__name__}")
             data = raw or {}
+            # Deprecated alias: 'language' was renamed to 'transcription_language'.
+            if "language" in data:
+                if "transcription_language" not in data:
+                    logger.warning(
+                        "config.yaml: 'language' is deprecated, rename it to 'transcription_language'"
+                    )
+                    data["transcription_language"] = data.pop("language")
+                else:
+                    logger.warning(
+                        "config.yaml: 'language' is deprecated and ignored"
+                        " ('transcription_language' is already set)"
+                    )
+                    data.pop("language")
             for key in set(data) - _KNOWN_FIELDS:
                 logger.warning("config.yaml: unknown key %r (ignored)", key)
             data = {k: v for k, v in data.items() if k in _KNOWN_FIELDS}
@@ -102,6 +117,19 @@ class Settings:
         for env_var, field in _ENV_MAP.items():
             if (value := os.environ.get(env_var)) is not None:
                 data[field] = value
+
+        # Deprecated alias: RECAP_LANGUAGE was renamed to RECAP_TRANSCRIPTION_LANGUAGE.
+        if (value := os.environ.get("RECAP_LANGUAGE")) is not None:
+            if "transcription_language" not in data:
+                logger.warning(
+                    "RECAP_LANGUAGE is deprecated, use RECAP_TRANSCRIPTION_LANGUAGE instead"
+                )
+                data["transcription_language"] = value
+            else:
+                logger.warning(
+                    "RECAP_LANGUAGE is deprecated and ignored"
+                    " (RECAP_TRANSCRIPTION_LANGUAGE is already set)"
+                )
 
         if "api_key" not in data and (value := os.environ.get("OPENAI_API_KEY")):
             data["api_key"] = value
@@ -188,10 +216,18 @@ class Settings:
             raise ConfigError(f"'provider' must be one of: {available}. Got {data['provider']!r}")
 
         if "summary_mode" in data:
+            from prompts import SUMMARY_MODES  # noqa: PLC0415
+
+            if data["summary_mode"] not in SUMMARY_MODES:
+                available = ", ".join(sorted(SUMMARY_MODES))
+                raise ConfigError(f"'summary_mode' must be one of: {available}. Got {data['summary_mode']!r}")
+
+        if "summary_language" in data and data["summary_language"] is not None:
             from prompts import PROMPTS  # noqa: PLC0415
 
-            if data["summary_mode"] not in PROMPTS:
+            lang = data["summary_language"]
+            if lang not in PROMPTS:
                 available = ", ".join(sorted(PROMPTS))
-                raise ConfigError(f"'summary_mode' must be one of: {available}. Got {data['summary_mode']!r}")
+                raise ConfigError(f"'summary_language' must be one of: {available}. Got {lang!r}")
 
         return cls(**data)
