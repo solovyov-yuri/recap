@@ -34,6 +34,7 @@ include = [
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+markers = ["integration: end-to-end CLI flows (mocks only at provider-factory boundary)"]
 
 [tool.ruff]
 line-length = 120
