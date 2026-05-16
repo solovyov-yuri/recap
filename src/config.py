@@ -7,12 +7,19 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+class ConfigError(ValueError):
+    pass
+
+
 PROVIDER_PRESETS: dict[str, str | None] = {
     "openai":    None,
     "ollama":    "http://localhost:11434/v1",
     "lm-studio": "http://localhost:1234/v1",
     "vllm":      "http://localhost:8000/v1",
 }
+
+VALID_SUMMARY_MODES: frozenset[str] = frozenset({"brief", "medium", "detailed"})
 
 _KNOWN_FIELDS = {
     "audio", "transcript", "summary", "language",
@@ -57,7 +64,10 @@ class Settings:
             import yaml  # noqa: PLC0415
 
             with config_path.open(encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
+                raw = yaml.safe_load(f)
+            if raw is not None and not isinstance(raw, dict):
+                raise ConfigError(f"config.yaml must be a YAML mapping, got {type(raw).__name__}")
+            data = raw or {}
             for key in set(data) - _KNOWN_FIELDS:
                 logger.warning("config.yaml: unknown key %r (ignored)", key)
             data = {k: v for k, v in data.items() if k in _KNOWN_FIELDS}
@@ -71,8 +81,29 @@ class Settings:
 
         for field in ("audio", "transcript", "summary"):
             if field in data:
-                data[field] = Path(data[field])
+                try:
+                    data[field] = Path(data[field])
+                except TypeError:
+                    raise ConfigError(f"'{field}' must be a file path string, got {data[field]!r}")
+
         if "max_transcript_chars" in data:
-            data["max_transcript_chars"] = int(data["max_transcript_chars"])
+            try:
+                data["max_transcript_chars"] = int(data["max_transcript_chars"])
+            except (ValueError, TypeError):
+                raise ConfigError(
+                    f"'max_transcript_chars' must be an integer, got {data['max_transcript_chars']!r}"
+                )
+            if data["max_transcript_chars"] <= 0:
+                raise ConfigError(
+                    f"'max_transcript_chars' must be a positive integer, got {data['max_transcript_chars']}"
+                )
+
+        if "provider" in data and data["provider"] not in PROVIDER_PRESETS:
+            available = ", ".join(PROVIDER_PRESETS)
+            raise ConfigError(f"'provider' must be one of: {available}. Got {data['provider']!r}")
+
+        if "summary_mode" in data and data["summary_mode"] not in VALID_SUMMARY_MODES:
+            available = ", ".join(sorted(VALID_SUMMARY_MODES))
+            raise ConfigError(f"'summary_mode' must be one of: {available}. Got {data['summary_mode']!r}")
 
         return cls(**data)

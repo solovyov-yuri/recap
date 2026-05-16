@@ -37,10 +37,14 @@ def transcribe(
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Transcribe an audio file to a timestamped transcript."""
-    from config import Settings  # noqa: PLC0415
+    from config import ConfigError, Settings  # noqa: PLC0415
 
     _configure_logging(verbose)
-    settings = Settings.load()
+    try:
+        settings = Settings.load()
+    except ConfigError as exc:
+        typer.echo(f"Configuration error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     audio_path = audio or settings.audio
     if not audio_path.exists():
         typer.echo(f"Error: audio file not found: {audio_path}", err=True)
@@ -77,11 +81,15 @@ def summarize(
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Generate a Telegram-formatted meeting summary from a transcript."""
-    from config import PROVIDER_PRESETS, Settings  # noqa: PLC0415
+    from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
     from prompts import PROMPTS  # noqa: PLC0415
 
     _configure_logging(verbose)
-    settings = Settings.load()
+    try:
+        settings = Settings.load()
+    except ConfigError as exc:
+        typer.echo(f"Configuration error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     transcript_path = transcript or settings.transcript
     if not transcript_path.exists():
         typer.echo(f"Error: transcript file not found: {transcript_path}", err=True)
@@ -145,7 +153,7 @@ def run(
     verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
 ) -> None:
     """Run the full pipeline: transcribe audio, then summarize."""
-    from config import PROVIDER_PRESETS, Settings  # noqa: PLC0415
+    from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
     from formatters import to_telegram  # noqa: PLC0415
     from pipeline import run_pipeline  # noqa: PLC0415
     from prompts import PROMPTS  # noqa: PLC0415
@@ -153,7 +161,11 @@ def run(
     from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
     _configure_logging(verbose)
-    settings = Settings.load()
+    try:
+        settings = Settings.load()
+    except ConfigError as exc:
+        typer.echo(f"Configuration error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     audio_path = audio or settings.audio
     if not audio_path.exists():
         typer.echo(f"Error: audio file not found: {audio_path}", err=True)

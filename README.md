@@ -148,3 +148,18 @@ uv run recap summarize call.txt -m detailed -p openai --model gpt-4o
 uv sync --group dev
 uv run pytest -v
 ```
+
+## Troubleshooting
+
+### Windows: ошибки доступа к кешу uv или temp
+
+Если `uv run pytest` падает с ошибкой доступа к `%LOCALAPPDATA%\uv\cache` или системной temp-директории, задайте локальные пути:
+
+```powershell
+$env:UV_CACHE_DIR = ".uv-cache"
+$env:TMP = ".tmp"
+$env:TEMP = ".tmp"
+uv run pytest -v
+```
+
+Либо добавьте их в `.env` или в настройки профиля PowerShell.

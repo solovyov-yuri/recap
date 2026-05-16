@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from config import Settings
+from config import ConfigError, Settings
 
 
 def test_defaults() -> None:
@@ -75,3 +75,50 @@ def test_summary_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RECAP_SUMMARY_MODE", "brief")
     s = Settings.load(config_path=Path("nonexistent.yaml"))
     assert s.summary_mode == "brief"
+
+
+def test_invalid_yaml_not_a_dict(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("- item1\n- item2\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="YAML mapping"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_provider(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("provider: grok\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="provider"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_PROVIDER", "bad-provider")
+    with pytest.raises(ConfigError, match="provider"):
+        Settings.load(config_path=Path("nonexistent.yaml"))
+
+
+def test_invalid_summary_mode(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summary_mode: ultra\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="summary_mode"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_max_transcript_chars_not_a_number(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("max_transcript_chars: abc\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="max_transcript_chars"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_max_transcript_chars_zero(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("max_transcript_chars: 0\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="max_transcript_chars"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_max_transcript_chars_negative(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_MAX_TRANSCRIPT_CHARS", "-500")
+    with pytest.raises(ConfigError, match="max_transcript_chars"):
+        Settings.load(config_path=Path("nonexistent.yaml"))

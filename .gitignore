@@ -13,5 +13,9 @@ wheels/
 data/*
 !data/.gitkeep
 
+# Test and build artifacts
+.pytest_cache/
+.tmp/
+
 # Local config (contains secrets / personal paths)
 config.yaml
