@@ -159,6 +159,8 @@ def summarize(
             base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
             max_chars=settings.max_transcript_chars,
             prompt_template=PROMPTS[mode_name],
+            timeout=settings.llm_timeout_seconds,
+            max_retries=settings.llm_retries,
         )
         raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
@@ -250,6 +252,8 @@ def run(
             base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
             max_chars=settings.max_transcript_chars,
             prompt_template=PROMPTS[mode_name],
+            timeout=settings.llm_timeout_seconds,
+            max_retries=settings.llm_retries,
         )
         formatted = to_telegram(summarizer.summarize(tr.to_text()))
     except Exception as exc:

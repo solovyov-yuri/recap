@@ -129,3 +129,43 @@ def test_invalid_max_transcript_chars_negative(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("RECAP_MAX_TRANSCRIPT_CHARS", "-500")
     with pytest.raises(ConfigError, match="max_transcript_chars"):
         Settings.load(config_path=Path("nonexistent.yaml"))
+
+
+def test_invalid_llm_timeout_not_a_number(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("llm_timeout_seconds: abc\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="llm_timeout_seconds"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_llm_timeout_zero(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("llm_timeout_seconds: 0\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="llm_timeout_seconds"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_llm_retries_not_a_number(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("llm_retries: abc\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="llm_retries"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_llm_retries_negative(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("llm_retries: -1\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="llm_retries"):
+        Settings.load(config_path=cfg)
+
+
+def test_llm_timeout_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_LLM_TIMEOUT", "120")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.llm_timeout_seconds == 120.0
+
+
+def test_llm_retries_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_LLM_RETRIES", "0")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.llm_retries == 0
