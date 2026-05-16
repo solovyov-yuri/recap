@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from prompts import PROMPTS, SUMMARY_PROMPT_MEDIUM_RU  # noqa: F401 — re-exported for consumers
+from prompts import CHUNK_PROMPTS, PROMPTS, SUMMARY_PROMPT_MEDIUM_RU  # noqa: F401 — re-exported for consumers
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,8 @@ class LLMSummarizer:
         model: str,
         api_key: str | None = None,
         base_url: str | None = None,
-        prompt_template: str | tuple[str, str] = PROMPTS["medium"],
+        prompt_template: str | tuple[str, str] = PROMPTS["ru"]["medium"],
+        chunk_prompt: tuple[str, str] | None = None,
         max_chars: int = 60_000,
         timeout: float = 60.0,
         max_retries: int = 2,
@@ -31,6 +32,7 @@ class LLMSummarizer:
         self._api_key = api_key
         self._base_url = base_url
         self._prompt_template = prompt_template
+        self._chunk_prompt = chunk_prompt if chunk_prompt is not None else CHUNK_PROMPTS["ru"]
         self._max_chars = max_chars
         self._timeout = timeout
         self._max_retries = max_retries
@@ -125,15 +127,13 @@ class LLMSummarizer:
     _MAX_MERGE_DEPTH = 3
 
     def _chunked_summarize(self, transcript_text: str, client, console, _depth: int = 0) -> str:
-        from prompts import CHUNK_PROMPT  # noqa: PLC0415
-
         chunks = self._split_into_chunks(transcript_text)
         logger.info("Transcript split into %d chunks for summarization.", len(chunks))
 
         chunk_summaries: list[str] = []
         for i, chunk in enumerate(chunks, 1):
             logger.info("Summarizing chunk %d/%d…", i, len(chunks))
-            messages = self._build_messages(chunk, prompt_template=CHUNK_PROMPT)
+            messages = self._build_messages(chunk, prompt_template=self._chunk_prompt)
             summary = self._call_llm(messages, client, console)
             chunk_summaries.append(f"[Часть {i}]\n{summary}")
 

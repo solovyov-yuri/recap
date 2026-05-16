@@ -15,7 +15,8 @@ model: qwen3.5:latest
 # summary: data/summary.txt
 
 # Transcription
-# language: ru
+# transcription_language: ru   # language passed to Whisper (was: language)
+# summary_language: ru         # language for LLM prompts; defaults to ru regardless of transcription_language
 # whisper_model: large-v3
 #
 # Whisper device and precision:

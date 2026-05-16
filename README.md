@@ -34,7 +34,8 @@ cp config.yaml.example config.yaml
 ```yaml
 provider: ollama          # openai | ollama | lm-studio | vllm
 model: qwen3.5:latest
-language: ru
+transcription_language: ru   # язык для Whisper
+# summary_language: ru       # язык промптов LLM (по умолчанию ru)
 whisper_model: large-v3
 max_transcript_chars: 60000   # лимит одного LLM-запроса; длинные транскрипты разбиваются на чанки (chunking_mode: chunk)
 # api_key: sk-...

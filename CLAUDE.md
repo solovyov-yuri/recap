@@ -21,7 +21,7 @@ uv run recap run [AUDIO]                 # full pipeline
 uv run recap <cmd> --help                # options per command
 ```
 
-All commands accept `-v/--verbose` for progress logs, `-o/--output` for output path, `-l/--language`, `-m/--model`, `-p/--provider`.
+All commands accept `-v/--verbose` for progress logs, `-o/--output` for output path, `-l/--language` (transcription), `--summary-language`, `-m/--mode`, `--model`, `-p/--provider`.
 
 **Tests:**
 ```bash
@@ -37,7 +37,8 @@ Settings are resolved in priority order: **CLI flags > env vars > config.yaml > 
 audio: data/meeting.wav
 transcript: data/transcript.txt
 summary: data/summary.txt
-language: ru
+transcription_language: ru   # language passed to Whisper
+summary_language: ru         # language for LLM prompts (optional, defaults to transcription_language)
 whisper_model: large-v3
 provider: ollama          # openai | ollama | lm-studio | vllm
 model: qwen3.5:latest
@@ -54,7 +55,8 @@ summary_mode: medium      # brief | medium | detailed
 | `RECAP_AUDIO` | `audio` |
 | `RECAP_TRANSCRIPT` | `transcript` |
 | `RECAP_SUMMARY` | `summary` |
-| `RECAP_LANGUAGE` | `language` |
+| `RECAP_TRANSCRIPTION_LANGUAGE` | `transcription_language` |
+| `RECAP_SUMMARY_LANGUAGE` | `summary_language` |
 | `RECAP_WHISPER_MODEL` | `whisper_model` |
 | `RECAP_PROVIDER` | `provider` |
 | `RECAP_MODEL` | `model` |
@@ -106,6 +108,10 @@ tests/
 
 **Adding a new LLM provider:** implement `summarize(self, transcript_text: str) -> str` — satisfies `Summarizer` protocol structurally (no inheritance needed). Add a preset URL to `PROVIDER_PRESETS` in `config.py`, wire in `cli.py`.
 
-**Adding a new summary mode:** add a `SUMMARY_PROMPT_<NAME>_RU` constant and register it in `PROMPTS` dict in `providers/llm.py`. No other files need changing.
+**Adding a new summary mode (same language):** add a `SUMMARY_PROMPT_<NAME>_<LANG>` constant in `prompts.py` and add it to `PROMPTS[lang][name]`. Update `SUMMARY_MODES` frozenset. No other files need changing.
+
+**Adding a new summary language:** add system + mode constants in `prompts.py`, register them in `PROMPTS["<lang>"]` and `CHUNK_PROMPTS["<lang>"]`. Config validation picks up the new language automatically. Currently only `ru` is shipped; setting `summary_language: en` is rejected until English prompts land.
 
 **Breaking change (v0.1):** `-m` flag was reassigned from `--model` to `--mode`. Use `--model` (long form) to specify the LLM model.
+
+**Breaking change (v0.2):** `config.yaml` field `language` renamed to `transcription_language`. Env var `RECAP_LANGUAGE` renamed to `RECAP_TRANSCRIPTION_LANGUAGE`.

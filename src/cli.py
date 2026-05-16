@@ -72,7 +72,8 @@ def batch(
     mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
     model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
     provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")] = None,
-    language: Annotated[Optional[str], typer.Option("-l", "--language", help="Language code (ru, en, …)")] = None,
+    language: Annotated[Optional[str], typer.Option("-l", "--language", help="Transcription language code (ru, en, …)")] = None,
+    summary_language: Annotated[Optional[str], typer.Option("--summary-language", help="Summary language (ru). Defaults to --language.")] = None,
     output_format: Annotated[str, typer.Option("-f", "--format", help="Output format: telegram | json")] = "telegram",
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
@@ -95,7 +96,7 @@ def batch(
 
     provider_name = provider or settings.provider
     mode_name = mode or settings.summary_mode
-    lang = language or settings.language
+    lang = language or settings.transcription_language
     out_dir = output_dir or folder
 
     if output_format not in ("telegram", "json"):
@@ -103,7 +104,7 @@ def batch(
         raise typer.Exit(code=1)
 
     try:
-        summarizer = make_summarizer(settings, provider_name, mode_name, model)
+        summarizer = make_summarizer(settings, provider_name, mode_name, model, summary_language)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -192,7 +193,7 @@ def transcribe(
         typer.echo(f"Error: audio file not found: {audio_path}", err=True)
         raise typer.Exit(code=1)
     output_path = output or settings.transcript
-    lang = language or settings.language
+    lang = language or settings.transcription_language
     _ensure_output(output_path)
     logger.info("Transcribing: %s", audio_path)
     try:
@@ -221,6 +222,7 @@ def summarize(
     mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
     model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
     provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")] = None,
+    summary_language: Annotated[Optional[str], typer.Option("--summary-language", help="Summary language (ru). Defaults to transcription_language.")] = None,
     output_format: Annotated[str, typer.Option("-f", "--format", help="Output format: telegram | json")] = "telegram",
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
@@ -247,7 +249,7 @@ def summarize(
 
     try:
         from providers.factory import make_summarizer  # noqa: PLC0415
-        summarizer = make_summarizer(settings, provider_name, mode_name, model)
+        summarizer = make_summarizer(settings, provider_name, mode_name, model, summary_language)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -290,7 +292,8 @@ def summarize(
 @app.command()
 def run(
     audio: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
-    language: Annotated[Optional[str], typer.Option("-l", "--language")] = None,
+    language: Annotated[Optional[str], typer.Option("-l", "--language", help="Transcription language code (ru, en, …)")] = None,
+    summary_language: Annotated[Optional[str], typer.Option("--summary-language", help="Summary language (ru). Defaults to --language.")] = None,
     mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
     model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
     provider: Annotated[Optional[str], typer.Option("-p", "--provider")] = None,
@@ -325,7 +328,7 @@ def run(
 
     try:
         from providers.factory import make_summarizer, make_transcriber  # noqa: PLC0415
-        summarizer = make_summarizer(settings, provider_name, mode_name, model)
+        summarizer = make_summarizer(settings, provider_name, mode_name, model, summary_language)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -340,7 +343,7 @@ def run(
         raise typer.Exit(code=1) from exc
 
     try:
-        tr = transcriber.transcribe(audio_path, language or settings.language)
+        tr = transcriber.transcribe(audio_path, language or settings.transcription_language)
     except Exception as exc:
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
