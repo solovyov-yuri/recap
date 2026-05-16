@@ -108,6 +108,43 @@ def test_run_saves_transcript_before_llm_failure(tmp_path: Path, monkeypatch: py
     assert transcript_file.exists(), "transcript must be saved before LLM is called"
 
 
+def test_privacy_warning_for_openai(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello world\n", encoding="utf-8")
+
+    import providers.llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", lambda self, text: "summary")
+    result = runner.invoke(app, ["summarize", str(transcript), "-p", "openai", "-o", str(tmp_path / "out.txt")])
+    assert "Warning" in result.output
+    assert "external" in result.output
+
+
+def test_no_privacy_warning_for_localhost(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello world\n", encoding="utf-8")
+
+    import providers.llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", lambda self, text: "summary")
+    result = runner.invoke(app, ["summarize", str(transcript), "-p", "ollama", "-o", str(tmp_path / "out.txt")])
+    assert "Warning" not in result.output
+
+
+def test_privacy_warning_suppressed_by_privacy_ack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello world\n", encoding="utf-8")
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("privacy_ack: true\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    import providers.llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", lambda self, text: "summary")
+    result = runner.invoke(app, ["summarize", str(transcript), "-p", "openai", "-o", str(tmp_path / "out.txt")])
+    assert "Warning" not in result.output
+
+
 def test_transcribe_whisper_load_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     audio = tmp_path / "test.wav"
     audio.write_bytes(b"\x00" * 16)

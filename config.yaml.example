@@ -17,3 +17,7 @@ model: qwen3.5:latest
 # Transcription
 # language: ru
 # whisper_model: large-v3
+
+# Privacy
+# Set to true to suppress the warning when transcript is sent to an external endpoint.
+# privacy_ack: false

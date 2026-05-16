@@ -22,7 +22,7 @@ PROVIDER_PRESETS: dict[str, str | None] = {
 _KNOWN_FIELDS = {
     "audio", "transcript", "summary", "language",
     "whisper_model", "provider", "model", "api_key", "base_url",
-    "max_transcript_chars", "summary_mode",
+    "max_transcript_chars", "summary_mode", "privacy_ack",
 }
 
 _ENV_MAP: dict[str, str] = {
@@ -37,6 +37,7 @@ _ENV_MAP: dict[str, str] = {
     "RECAP_BASE_URL":            "base_url",
     "RECAP_MAX_TRANSCRIPT_CHARS": "max_transcript_chars",
     "RECAP_SUMMARY_MODE":         "summary_mode",
+    "RECAP_PRIVACY_ACK":          "privacy_ack",
 }
 
 
@@ -53,6 +54,7 @@ class Settings:
     base_url: str | None = None
     max_transcript_chars: int = 60_000
     summary_mode: str = "medium"
+    privacy_ack: bool = False
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:
@@ -98,6 +100,10 @@ class Settings:
                 raise ConfigError(
                     f"'max_transcript_chars' must be a positive integer, got {data['max_transcript_chars']}"
                 )
+
+        if "privacy_ack" in data:
+            val = data["privacy_ack"]
+            data["privacy_ack"] = val.lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
 
         if "provider" in data and data["provider"] not in PROVIDER_PRESETS:
             available = ", ".join(PROVIDER_PRESETS)

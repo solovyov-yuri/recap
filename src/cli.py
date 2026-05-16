@@ -20,6 +20,31 @@ def _configure_logging(verbose: bool) -> None:
     )
 
 
+_LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
+
+
+def _is_external(base_url: str | None, provider: str) -> bool:
+    if provider == "openai" and base_url is None:
+        return True
+    if base_url is None:
+        return False
+    from urllib.parse import urlparse  # noqa: PLC0415
+
+    hostname = urlparse(base_url).hostname or ""
+    return hostname not in _LOCAL_HOSTNAMES
+
+
+def _warn_if_external(base_url: str | None, provider: str, privacy_ack: bool) -> None:
+    if privacy_ack or not _is_external(base_url, provider):
+        return
+    endpoint = base_url or "https://api.openai.com"
+    typer.echo(
+        f"Warning: transcript will be sent to external endpoint ({endpoint}).\n"
+        "Set 'privacy_ack: true' in config.yaml to silence this warning.",
+        err=True,
+    )
+
+
 def _ensure_output(path: Path) -> None:
     if path.is_dir():
         typer.echo(f"Error: output path is a directory: {path}", err=True)
@@ -115,6 +140,7 @@ def summarize(
 
     _ensure_output(output_path)
     logger.info("Summarizing: %s via %s (mode: %s)", transcript_path, provider_name, mode_name)
+    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
     from formatters import to_telegram  # noqa: PLC0415
     from providers.llm import LLMSummarizer  # noqa: PLC0415
@@ -215,6 +241,7 @@ def run(
         typer.echo(f"Error writing transcript to {transcript_path.resolve()}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Transcript saved to {transcript_path}")
+    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
     try:
         summarizer = LLMSummarizer(
