@@ -143,6 +143,22 @@ uv run recap run audio.wav -m detailed -p openai
 
 Записывает транскрипцию в `data/transcript.txt`, саммари — в `data/summary.txt`.
 
+### Пакетная обработка
+
+```bash
+uv run recap batch recordings/                    # все аудиофайлы в папке, вывод туда же
+uv run recap batch recordings/ -o out/ -m brief   # в отдельную папку, краткое саммари
+uv run recap batch recordings/ -p openai --model gpt-4o
+```
+
+Поддерживаемые расширения: `.wav`, `.mp3`, `.m4a`, `.ogg`.
+
+Для каждого файла `{name}.{ext}` создаются:
+- `{name}.txt` — транскрипция
+- `{name}_summary.txt` — саммари
+
+Если в папке есть два файла с одинаковым именем, но разными расширениями (`call.wav` и `call.mp3`), команда завершается с ошибкой до обработки — чтобы не затирать результаты. Если отдельные файлы не удалось обработать, batch продолжает работу и в конце выводит счётчик `N succeeded, M failed`; exit code 1 при любых ошибках.
+
 ### По шагам
 
 **Транскрибация:**
@@ -163,10 +179,11 @@ uv run recap summarize call.txt -m detailed -p openai --model gpt-4o
 | Опция | Команды | Описание |
 |---|---|---|
 | `-o, --output PATH` | transcribe, summarize | Файл вывода |
-| `-l, --language TEXT` | transcribe, run | Язык аудио (`ru`, `en`, …) |
-| `-m, --mode TEXT` | summarize, run | Режим: `brief` \| `medium` \| `detailed` |
-| `-p, --provider TEXT` | summarize, run | Провайдер (см. таблицу выше) |
-| `--model TEXT` | summarize, run | Модель LLM (переопределяет config) |
+| `-o, --output-dir PATH` | batch | Папка вывода (по умолчанию — папка с аудио) |
+| `-l, --language TEXT` | transcribe, run, batch | Язык аудио (`ru`, `en`, …) |
+| `-m, --mode TEXT` | summarize, run, batch | Режим: `brief` \| `medium` \| `detailed` |
+| `-p, --provider TEXT` | summarize, run, batch | Провайдер (см. таблицу выше) |
+| `--model TEXT` | summarize, run, batch | Модель LLM (переопределяет config) |
 | `--transcript PATH` | run | Путь для промежуточной транскрипции |
 | `--summary PATH` | run | Путь для саммари |
 | `-v, --verbose` | все | Показывать прогресс |
