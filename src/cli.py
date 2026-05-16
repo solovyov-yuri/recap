@@ -146,7 +146,6 @@ def summarize(
 
     _ensure_output(output_path)
     logger.info("Summarizing: %s via %s (mode: %s)", transcript_path, provider_name, mode_name)
-    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
     from formatters import to_telegram  # noqa: PLC0415
     from providers.llm import LLMSummarizer  # noqa: PLC0415
@@ -157,6 +156,12 @@ def summarize(
     except OSError as exc:
         typer.echo(f"Error reading transcript: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+
+    if tr.is_empty:
+        typer.echo("Error: no speech detected in transcript.", err=True)
+        raise typer.Exit(code=1)
+
+    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
     try:
         summarizer = LLMSummarizer(
@@ -241,6 +246,11 @@ def run(
 
     _write_atomic(transcript_path, tr.to_file_format(), "transcript")
     typer.echo(f"Transcript saved to {transcript_path}")
+
+    if tr.is_empty:
+        typer.echo("No speech detected in transcript — summary skipped.", err=True)
+        raise typer.Exit(code=1)
+
     _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
     try:
