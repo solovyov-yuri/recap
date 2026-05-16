@@ -2,9 +2,18 @@ from __future__ import annotations
 
 import re
 
+# Output format: Telegram Markdown v1 (parse_mode="Markdown").
+# Supported: *bold*, _italic_, `code`, [text](url).
+#
+# Known limitation: v1 has no backslash escaping. If the LLM output contains
+# unbalanced _ or ` characters (e.g. snake_case identifiers, lone backticks),
+# Telegram may reject the message or render it incorrectly. The prompts instruct
+# the LLM to use only * for emphasis and avoid raw _, so this is rare in practice.
+# If strict escaping is required in the future, migrate to MarkdownV2.
+
 
 def to_telegram(text: str) -> str:
-    """Convert LLM Markdown output (##, **, numbered lists) to Telegram Markdown."""
+    """Convert LLM Markdown output to Telegram Markdown v1."""
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     text = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", text, flags=re.MULTILINE)
     text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)

@@ -42,3 +42,27 @@ def test_to_plain_passthrough() -> None:
 def test_to_plain_multiline_think() -> None:
     text = "<think>\nдолгие\nрассуждения\n</think>\nрезультат"
     assert to_plain(text) == "результат"
+
+
+# Special character behaviour (Telegram Markdown v1 — no backslash escaping).
+# These tests document current pass-through behaviour. Unbalanced _ or ` may
+# cause Telegram to reject the message; this is a known v1 limitation.
+
+@pytest.mark.parametrize("input_text, expected", [
+    # Underscores in plain text pass through unchanged
+    ("файл file_name.txt готов", "файл file_name.txt готов"),
+    # Paired underscores pass through (Telegram renders as italic — intentional)
+    ("_курсив_", "_курсив_"),
+    # Backtick inline code passes through
+    ("запусти `pip install recap`", "запусти `pip install recap`"),
+    # Inline URL passes through (Telegram renders as hyperlink)
+    ("[документация](https://example.com)", "[документация](https://example.com)"),
+    # Bare brackets without URL pass through
+    ("пункт [1] выполнен", "пункт [1] выполнен"),
+    # Parentheses pass through
+    ("(см. приложение)", "(см. приложение)"),
+    # Mixed: heading with special chars in body
+    ("## Итог\nфайл config_(prod).yaml", "*Итог*\nфайл config_(prod).yaml"),
+])
+def test_special_chars_pass_through(input_text: str, expected: str) -> None:
+    assert to_telegram(input_text) == expected
