@@ -45,6 +45,16 @@ def _warn_if_external(base_url: str | None, provider: str, privacy_ack: bool) ->
     )
 
 
+def _write_atomic(path: Path, text: str, label: str) -> None:
+    from utils import write_text_atomic  # noqa: PLC0415
+
+    try:
+        write_text_atomic(path, text)
+    except OSError as exc:
+        typer.echo(f"Error writing {label} to {path.resolve()}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 def _ensure_output(path: Path) -> None:
     if path.is_dir():
         typer.echo(f"Error: output path is a directory: {path}", err=True)
@@ -93,11 +103,7 @@ def transcribe(
         raise typer.Exit(code=1) from exc
 
     logger.info("Writing transcript to %s", output_path.resolve())
-    try:
-        output_path.write_text(transcript.to_file_format(), encoding="utf-8")
-    except OSError as exc:
-        typer.echo(f"Error writing transcript to {output_path.resolve()}: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+    _write_atomic(output_path, transcript.to_file_format(), "transcript")
     typer.echo(f"Transcript saved to {output_path}")
 
 
@@ -170,11 +176,7 @@ def summarize(
 
     typer.echo(summary)
     logger.info("Writing summary to %s", output_path.resolve())
-    try:
-        output_path.write_text(summary, encoding="utf-8")
-    except OSError as exc:
-        typer.echo(f"Error writing summary to {output_path.resolve()}: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+    _write_atomic(output_path, summary, "summary")
     typer.echo(f"\nSummary saved to {output_path}")
 
 
@@ -237,11 +239,7 @@ def run(
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    try:
-        transcript_path.write_text(tr.to_file_format(), encoding="utf-8")
-    except OSError as exc:
-        typer.echo(f"Error writing transcript to {transcript_path.resolve()}: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+    _write_atomic(transcript_path, tr.to_file_format(), "transcript")
     typer.echo(f"Transcript saved to {transcript_path}")
     _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
 
@@ -261,9 +259,5 @@ def run(
         raise typer.Exit(code=1) from exc
 
     typer.echo(formatted)
-    try:
-        summary_path.write_text(formatted, encoding="utf-8")
-    except OSError as exc:
-        typer.echo(f"Error writing summary to {summary_path.resolve()}: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+    _write_atomic(summary_path, formatted, "summary")
     typer.echo(f"\nSummary saved to {summary_path}")
