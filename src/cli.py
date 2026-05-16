@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import logging
 import sys
+from io import TextIOWrapper
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-sys.stdout.reconfigure(write_through=True)
+if isinstance(sys.stdout, TextIOWrapper):
+    sys.stdout.reconfigure(write_through=True)
 
 app = typer.Typer(help="Meeting transcription and summarization tool")
 logger = logging.getLogger(__name__)
@@ -68,17 +70,25 @@ def _ensure_output(path: Path) -> None:
 @app.command()
 def batch(
     folder: Annotated[Path, typer.Argument(file_okay=False, dir_okay=True, help="Folder with audio files to process")],
-    output_dir: Annotated[Optional[Path], typer.Option("-o", "--output-dir", help="Output directory (defaults to folder)")] = None,
-    mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
-    model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
-    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")] = None,
-    language: Annotated[Optional[str], typer.Option("-l", "--language", help="Transcription language code (ru, en, …)")] = None,
-    summary_language: Annotated[Optional[str], typer.Option("--summary-language", help="Summary language (ru). Defaults to --language.")] = None,
+    output_dir: Annotated[
+        Path | None, typer.Option("-o", "--output-dir", help="Output directory (defaults to folder)")
+    ] = None,
+    mode: Annotated[str | None, typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Model name (overrides config)")] = None,
+    provider: Annotated[
+        str | None, typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")
+    ] = None,
+    language: Annotated[
+        str | None, typer.Option("-l", "--language", help="Transcription language code (ru, en, …)")
+    ] = None,
+    summary_language: Annotated[
+        str | None, typer.Option("--summary-language", help="Summary language (ru). Defaults to --language.")
+    ] = None,
     output_format: Annotated[str, typer.Option("-f", "--format", help="Output format: telegram | json")] = "telegram",
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Process all audio files in a folder: transcribe and summarize each."""
-    from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
+    from config import PROVIDER_PRESETS, ConfigError, Settings  # noqa: PLC0415
     from formatters import to_json, to_telegram  # noqa: PLC0415
     from providers.factory import make_summarizer, make_transcriber  # noqa: PLC0415
     from utils import write_text_atomic  # noqa: PLC0415
@@ -159,6 +169,7 @@ def batch(
             raw = summarizer.summarize(tr.to_text())
             if output_format == "json":
                 from models import MeetingSummary  # noqa: PLC0415
+
                 write_text_atomic(summary_path, to_json(MeetingSummary(raw=raw, mode=mode_name)))
             else:
                 write_text_atomic(summary_path, to_telegram(raw))
@@ -174,9 +185,9 @@ def batch(
 
 @app.command()
 def transcribe(
-    audio: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
-    output: Annotated[Optional[Path], typer.Option("-o", "--output", help="Output transcript file")] = None,
-    language: Annotated[Optional[str], typer.Option("-l", "--language", help="Language code (ru, en, …)")] = None,
+    audio: Annotated[Path | None, typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
+    output: Annotated[Path | None, typer.Option("-o", "--output", help="Output transcript file")] = None,
+    language: Annotated[str | None, typer.Option("-l", "--language", help="Language code (ru, en, …)")] = None,
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Transcribe an audio file to a timestamped transcript."""
@@ -217,17 +228,24 @@ def transcribe(
 
 @app.command()
 def summarize(
-    transcript: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Transcript file to summarize")] = None,
-    output: Annotated[Optional[Path], typer.Option("-o", "--output", help="Output summary file")] = None,
-    mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
-    model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
-    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")] = None,
-    summary_language: Annotated[Optional[str], typer.Option("--summary-language", help="Summary language (ru). Defaults to transcription_language.")] = None,
+    transcript: Annotated[
+        Path | None, typer.Argument(file_okay=True, dir_okay=False, help="Transcript file to summarize")
+    ] = None,
+    output: Annotated[Path | None, typer.Option("-o", "--output", help="Output summary file")] = None,
+    mode: Annotated[str | None, typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Model name (overrides config)")] = None,
+    provider: Annotated[
+        str | None, typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")
+    ] = None,
+    summary_language: Annotated[
+        str | None,
+        typer.Option("--summary-language", help="Summary language (ru). Defaults to transcription_language."),
+    ] = None,
     output_format: Annotated[str, typer.Option("-f", "--format", help="Output format: telegram | json")] = "telegram",
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Generate a meeting summary from a transcript."""
-    from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
+    from config import PROVIDER_PRESETS, ConfigError, Settings  # noqa: PLC0415
 
     _configure_logging(verbose)
     try:
@@ -249,6 +267,7 @@ def summarize(
 
     try:
         from providers.factory import make_summarizer  # noqa: PLC0415
+
         summarizer = make_summarizer(settings, provider_name, mode_name, model, summary_language)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
@@ -276,6 +295,7 @@ def summarize(
         raw = summarizer.summarize(tr.to_text())
         if output_format == "json":
             from models import MeetingSummary  # noqa: PLC0415
+
             formatted = to_json(MeetingSummary(raw=raw, mode=mode_name))
         else:
             formatted = to_telegram(raw)
@@ -291,19 +311,23 @@ def summarize(
 
 @app.command()
 def run(
-    audio: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
-    language: Annotated[Optional[str], typer.Option("-l", "--language", help="Transcription language code (ru, en, …)")] = None,
-    summary_language: Annotated[Optional[str], typer.Option("--summary-language", help="Summary language (ru). Defaults to --language.")] = None,
-    mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
-    model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
-    provider: Annotated[Optional[str], typer.Option("-p", "--provider")] = None,
-    transcript: Annotated[Optional[Path], typer.Option("--transcript")] = None,
-    summary: Annotated[Optional[Path], typer.Option("--summary")] = None,
+    audio: Annotated[Path | None, typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
+    language: Annotated[
+        str | None, typer.Option("-l", "--language", help="Transcription language code (ru, en, …)")
+    ] = None,
+    summary_language: Annotated[
+        str | None, typer.Option("--summary-language", help="Summary language (ru). Defaults to --language.")
+    ] = None,
+    mode: Annotated[str | None, typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Model name (overrides config)")] = None,
+    provider: Annotated[str | None, typer.Option("-p", "--provider")] = None,
+    transcript: Annotated[Path | None, typer.Option("--transcript")] = None,
+    summary: Annotated[Path | None, typer.Option("--summary")] = None,
     output_format: Annotated[str, typer.Option("-f", "--format", help="Output format: telegram | json")] = "telegram",
     verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
 ) -> None:
     """Run the full pipeline: transcribe audio, then summarize."""
-    from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
+    from config import PROVIDER_PRESETS, ConfigError, Settings  # noqa: PLC0415
     from formatters import to_json, to_telegram  # noqa: PLC0415
 
     _configure_logging(verbose)
@@ -328,6 +352,7 @@ def run(
 
     try:
         from providers.factory import make_summarizer, make_transcriber  # noqa: PLC0415
+
         summarizer = make_summarizer(settings, provider_name, mode_name, model, summary_language)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
@@ -361,6 +386,7 @@ def run(
         raw = summarizer.summarize(tr.to_text())
         if output_format == "json":
             from models import MeetingSummary  # noqa: PLC0415
+
             formatted = to_json(MeetingSummary(raw=raw, mode=mode_name))
         else:
             formatted = to_telegram(raw)

@@ -237,6 +237,18 @@ uv sync --group dev
 uv run pytest -v
 ```
 
+**Линтер и форматирование:**
+```bash
+uv run ruff check src/        # проверка стиля
+uv run ruff check src/ --fix  # авто-исправление
+uv run ruff format src/       # форматирование кода
+```
+
+**Типизация:**
+```bash
+uv run mypy src/
+```
+
 ## Troubleshooting
 
 ### Windows: ошибки доступа к кешу uv или temp

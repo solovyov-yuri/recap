@@ -13,44 +13,58 @@ class ConfigError(ValueError):
 
 
 PROVIDER_PRESETS: dict[str, str | None] = {
-    "openai":    None,
-    "ollama":    "http://localhost:11434/v1",
+    "openai": None,
+    "ollama": "http://localhost:11434/v1",
     "lm-studio": "http://localhost:1234/v1",
-    "vllm":      "http://localhost:8000/v1",
+    "vllm": "http://localhost:8000/v1",
 }
 
 _KNOWN_FIELDS = {
-    "audio", "transcript", "summary", "transcription_language", "summary_language",
-    "whisper_model", "provider", "model", "api_key", "base_url",
-    "max_transcript_chars", "summary_mode", "privacy_ack",
-    "llm_timeout_seconds", "llm_retries",
-    "whisper_device", "whisper_compute_type", "whisper_beam_size",
-    "whisper_vad_filter", "whisper_condition_on_previous_text",
+    "audio",
+    "transcript",
+    "summary",
+    "transcription_language",
+    "summary_language",
+    "whisper_model",
+    "provider",
+    "model",
+    "api_key",
+    "base_url",
+    "max_transcript_chars",
+    "summary_mode",
+    "privacy_ack",
+    "llm_timeout_seconds",
+    "llm_retries",
+    "whisper_device",
+    "whisper_compute_type",
+    "whisper_beam_size",
+    "whisper_vad_filter",
+    "whisper_condition_on_previous_text",
     "chunking_mode",
 }
 
 _ENV_MAP: dict[str, str] = {
-    "RECAP_AUDIO":                    "audio",
-    "RECAP_TRANSCRIPT":               "transcript",
-    "RECAP_SUMMARY":                  "summary",
-    "RECAP_TRANSCRIPTION_LANGUAGE":   "transcription_language",
-    "RECAP_SUMMARY_LANGUAGE":         "summary_language",
-    "RECAP_WHISPER_MODEL":            "whisper_model",
-    "RECAP_PROVIDER":                 "provider",
-    "RECAP_MODEL":                    "model",
-    "RECAP_API_KEY":                  "api_key",
-    "RECAP_BASE_URL":                 "base_url",
-    "RECAP_MAX_TRANSCRIPT_CHARS":               "max_transcript_chars",
-    "RECAP_SUMMARY_MODE":                       "summary_mode",
-    "RECAP_PRIVACY_ACK":                        "privacy_ack",
-    "RECAP_LLM_TIMEOUT":                        "llm_timeout_seconds",
-    "RECAP_LLM_RETRIES":                        "llm_retries",
-    "RECAP_WHISPER_DEVICE":                     "whisper_device",
-    "RECAP_WHISPER_COMPUTE_TYPE":               "whisper_compute_type",
-    "RECAP_WHISPER_BEAM_SIZE":                  "whisper_beam_size",
-    "RECAP_WHISPER_VAD_FILTER":                 "whisper_vad_filter",
+    "RECAP_AUDIO": "audio",
+    "RECAP_TRANSCRIPT": "transcript",
+    "RECAP_SUMMARY": "summary",
+    "RECAP_TRANSCRIPTION_LANGUAGE": "transcription_language",
+    "RECAP_SUMMARY_LANGUAGE": "summary_language",
+    "RECAP_WHISPER_MODEL": "whisper_model",
+    "RECAP_PROVIDER": "provider",
+    "RECAP_MODEL": "model",
+    "RECAP_API_KEY": "api_key",
+    "RECAP_BASE_URL": "base_url",
+    "RECAP_MAX_TRANSCRIPT_CHARS": "max_transcript_chars",
+    "RECAP_SUMMARY_MODE": "summary_mode",
+    "RECAP_PRIVACY_ACK": "privacy_ack",
+    "RECAP_LLM_TIMEOUT": "llm_timeout_seconds",
+    "RECAP_LLM_RETRIES": "llm_retries",
+    "RECAP_WHISPER_DEVICE": "whisper_device",
+    "RECAP_WHISPER_COMPUTE_TYPE": "whisper_compute_type",
+    "RECAP_WHISPER_BEAM_SIZE": "whisper_beam_size",
+    "RECAP_WHISPER_VAD_FILTER": "whisper_vad_filter",
     "RECAP_WHISPER_CONDITION_ON_PREVIOUS_TEXT": "whisper_condition_on_previous_text",
-    "RECAP_CHUNKING_MODE":                      "chunking_mode",
+    "RECAP_CHUNKING_MODE": "chunking_mode",
 }
 
 _VALID_WHISPER_DEVICES = {"cuda", "cpu", "auto"}
@@ -100,14 +114,11 @@ class Settings:
             # Deprecated alias: 'language' was renamed to 'transcription_language'.
             if "language" in data:
                 if "transcription_language" not in data:
-                    logger.warning(
-                        "config.yaml: 'language' is deprecated, rename it to 'transcription_language'"
-                    )
+                    logger.warning("config.yaml: 'language' is deprecated, rename it to 'transcription_language'")
                     data["transcription_language"] = data.pop("language")
                 else:
                     logger.warning(
-                        "config.yaml: 'language' is deprecated and ignored"
-                        " ('transcription_language' is already set)"
+                        "config.yaml: 'language' is deprecated and ignored ('transcription_language' is already set)"
                     )
                     data.pop("language")
             for key in set(data) - _KNOWN_FIELDS:
@@ -121,15 +132,10 @@ class Settings:
         # Deprecated alias: RECAP_LANGUAGE was renamed to RECAP_TRANSCRIPTION_LANGUAGE.
         if (value := os.environ.get("RECAP_LANGUAGE")) is not None:
             if "transcription_language" not in data:
-                logger.warning(
-                    "RECAP_LANGUAGE is deprecated, use RECAP_TRANSCRIPTION_LANGUAGE instead"
-                )
+                logger.warning("RECAP_LANGUAGE is deprecated, use RECAP_TRANSCRIPTION_LANGUAGE instead")
                 data["transcription_language"] = value
             else:
-                logger.warning(
-                    "RECAP_LANGUAGE is deprecated and ignored"
-                    " (RECAP_TRANSCRIPTION_LANGUAGE is already set)"
-                )
+                logger.warning("RECAP_LANGUAGE is deprecated and ignored (RECAP_TRANSCRIPTION_LANGUAGE is already set)")
 
         if "api_key" not in data and (value := os.environ.get("OPENAI_API_KEY")):
             data["api_key"] = value
@@ -145,9 +151,7 @@ class Settings:
             try:
                 data["max_transcript_chars"] = int(data["max_transcript_chars"])
             except (ValueError, TypeError):
-                raise ConfigError(
-                    f"'max_transcript_chars' must be an integer, got {data['max_transcript_chars']!r}"
-                )
+                raise ConfigError(f"'max_transcript_chars' must be an integer, got {data['max_transcript_chars']!r}")
             if data["max_transcript_chars"] <= 0:
                 raise ConfigError(
                     f"'max_transcript_chars' must be a positive integer, got {data['max_transcript_chars']}"
@@ -157,25 +161,17 @@ class Settings:
             try:
                 data["llm_timeout_seconds"] = float(data["llm_timeout_seconds"])
             except (ValueError, TypeError):
-                raise ConfigError(
-                    f"'llm_timeout_seconds' must be a number, got {data['llm_timeout_seconds']!r}"
-                )
+                raise ConfigError(f"'llm_timeout_seconds' must be a number, got {data['llm_timeout_seconds']!r}")
             if data["llm_timeout_seconds"] <= 0:
-                raise ConfigError(
-                    f"'llm_timeout_seconds' must be positive, got {data['llm_timeout_seconds']}"
-                )
+                raise ConfigError(f"'llm_timeout_seconds' must be positive, got {data['llm_timeout_seconds']}")
 
         if "llm_retries" in data:
             try:
                 data["llm_retries"] = int(data["llm_retries"])
             except (ValueError, TypeError):
-                raise ConfigError(
-                    f"'llm_retries' must be a non-negative integer, got {data['llm_retries']!r}"
-                )
+                raise ConfigError(f"'llm_retries' must be a non-negative integer, got {data['llm_retries']!r}")
             if data["llm_retries"] < 0:
-                raise ConfigError(
-                    f"'llm_retries' must be >= 0, got {data['llm_retries']}"
-                )
+                raise ConfigError(f"'llm_retries' must be >= 0, got {data['llm_retries']}")
 
         for field in _BOOL_FIELDS:
             if field in data:
@@ -186,19 +182,13 @@ class Settings:
             try:
                 data["whisper_beam_size"] = int(data["whisper_beam_size"])
             except (ValueError, TypeError):
-                raise ConfigError(
-                    f"'whisper_beam_size' must be a positive integer, got {data['whisper_beam_size']!r}"
-                )
+                raise ConfigError(f"'whisper_beam_size' must be a positive integer, got {data['whisper_beam_size']!r}")
             if data["whisper_beam_size"] <= 0:
-                raise ConfigError(
-                    f"'whisper_beam_size' must be a positive integer, got {data['whisper_beam_size']}"
-                )
+                raise ConfigError(f"'whisper_beam_size' must be a positive integer, got {data['whisper_beam_size']}")
 
         if "whisper_device" in data and data["whisper_device"] not in _VALID_WHISPER_DEVICES:
             available = ", ".join(sorted(_VALID_WHISPER_DEVICES))
-            raise ConfigError(
-                f"'whisper_device' must be one of: {available}. Got {data['whisper_device']!r}"
-            )
+            raise ConfigError(f"'whisper_device' must be one of: {available}. Got {data['whisper_device']!r}")
 
         if "whisper_compute_type" in data and data["whisper_compute_type"] not in _VALID_WHISPER_COMPUTE_TYPES:
             available = ", ".join(sorted(_VALID_WHISPER_COMPUTE_TYPES))
@@ -207,9 +197,7 @@ class Settings:
             )
 
         if "chunking_mode" in data and data["chunking_mode"] not in ("chunk", "truncate"):
-            raise ConfigError(
-                f"'chunking_mode' must be 'chunk' or 'truncate'. Got {data['chunking_mode']!r}"
-            )
+            raise ConfigError(f"'chunking_mode' must be 'chunk' or 'truncate'. Got {data['chunking_mode']!r}")
 
         if "provider" in data and data["provider"] not in PROVIDER_PRESETS:
             available = ", ".join(PROVIDER_PRESETS)

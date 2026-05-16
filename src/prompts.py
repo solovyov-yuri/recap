@@ -66,8 +66,8 @@ CHUNK_PROMPT_RU = """\
 # Two-level structure: PROMPTS[language][mode] -> (system_prompt, user_template)
 PROMPTS: dict[str, dict[str, tuple[str, str]]] = {
     "ru": {
-        "brief":    (SYSTEM_PROMPT_RU, SUMMARY_PROMPT_BRIEF_RU),
-        "medium":   (SYSTEM_PROMPT_RU, SUMMARY_PROMPT_MEDIUM_RU),
+        "brief": (SYSTEM_PROMPT_RU, SUMMARY_PROMPT_BRIEF_RU),
+        "medium": (SYSTEM_PROMPT_RU, SUMMARY_PROMPT_MEDIUM_RU),
         "detailed": (SYSTEM_PROMPT_RU, SUMMARY_PROMPT_DETAILED_RU),
     },
 }

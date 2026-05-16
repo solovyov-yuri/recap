@@ -27,11 +27,13 @@ class Transcript:
                 continue
             m = _TIMESTAMP_RE.match(line)
             if m:
-                segments.append(Segment(
-                    start=float(m.group(1)),
-                    end=float(m.group(2)),
-                    text=m.group(3).strip(),
-                ))
+                segments.append(
+                    Segment(
+                        start=float(m.group(1)),
+                        end=float(m.group(2)),
+                        text=m.group(3).strip(),
+                    )
+                )
             else:
                 segments.append(Segment(start=0.0, end=0.0, text=line))
         return cls(segments=tuple(segments))

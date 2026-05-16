@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from config import PROVIDER_PRESETS, Settings
+
+if TYPE_CHECKING:
+    from providers.llm import LLMSummarizer
+    from providers.whisper import WhisperTranscriber
 
 
 def make_summarizer(
@@ -9,12 +15,12 @@ def make_summarizer(
     mode_name: str,
     model_override: str | None = None,
     summary_language: str | None = None,
-) -> "LLMSummarizer":
+) -> LLMSummarizer:
     """Validate provider, mode, and language, then build an LLMSummarizer.
 
     Raises ValueError for unknown provider, mode, or language.
     """
-    from prompts import CHUNK_PROMPTS, PROMPTS, get_prompt  # noqa: PLC0415
+    from prompts import CHUNK_PROMPTS, get_prompt  # noqa: PLC0415
 
     if provider_name not in PROVIDER_PRESETS:
         available = ", ".join(PROVIDER_PRESETS)
@@ -46,7 +52,7 @@ def make_summarizer(
     )
 
 
-def make_transcriber(settings: Settings) -> "WhisperTranscriber":
+def make_transcriber(settings: Settings) -> WhisperTranscriber:
     """Build a WhisperTranscriber from settings."""
     from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
