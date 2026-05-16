@@ -76,6 +76,38 @@ def test_config_error_propagates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert "Configuration error" in result.output
 
 
+def test_run_saves_transcript_before_llm_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    audio = tmp_path / "test.wav"
+    audio.write_bytes(b"\x00" * 16)
+    transcript_file = tmp_path / "out.txt"
+    summary_file = tmp_path / "out_summary.txt"
+
+    from transcript import Segment, Transcript
+
+    fake_tr = Transcript(segments=(Segment(start=0.0, end=1.0, text="hello"),))
+
+    import providers.llm as llm_mod
+    import providers.whisper as whisper_mod
+
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, model_name="large-v3": None)
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "transcribe", lambda self, audio, language="ru": fake_tr)
+
+    def bad_summarize(self: object, text: str) -> str:
+        raise ConnectionError("LLM down")
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", bad_summarize)
+
+    result = runner.invoke(app, [
+        "run", str(audio),
+        "--transcript", str(transcript_file),
+        "--summary", str(summary_file),
+    ])
+
+    assert result.exit_code == 1
+    assert "LLM error" in result.output
+    assert transcript_file.exists(), "transcript must be saved before LLM is called"
+
+
 def test_transcribe_whisper_load_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     audio = tmp_path / "test.wav"
     audio.write_bytes(b"\x00" * 16)

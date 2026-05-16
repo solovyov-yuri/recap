@@ -210,6 +210,13 @@ def run(
         raise typer.Exit(code=1) from exc
 
     try:
+        transcript_path.write_text(tr.to_file_format(), encoding="utf-8")
+    except OSError as exc:
+        typer.echo(f"Error writing transcript to {transcript_path.resolve()}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Transcript saved to {transcript_path}")
+
+    try:
         summarizer = LLMSummarizer(
             model=model or settings.model,
             api_key=settings.api_key,
@@ -221,13 +228,6 @@ def run(
     except Exception as exc:
         typer.echo(f"LLM error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
-
-    try:
-        transcript_path.write_text(tr.to_file_format(), encoding="utf-8")
-    except OSError as exc:
-        typer.echo(f"Error writing transcript to {transcript_path.resolve()}: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(f"Transcript saved to {transcript_path}")
 
     typer.echo(formatted)
     try:
