@@ -57,6 +57,11 @@ def transcribe(
         from providers.whisper import WhisperTranscriber  # noqa: PLC0415
 
         transcriber = WhisperTranscriber(settings.whisper_model)
+    except Exception as exc:
+        typer.echo(f"Error loading Whisper model: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
         transcript = transcriber.transcribe(audio_path, lang)
     except Exception as exc:
         typer.echo(f"Transcription error: {exc}", err=True)
@@ -110,12 +115,18 @@ def summarize(
 
     _ensure_output(output_path)
     logger.info("Summarizing: %s via %s (mode: %s)", transcript_path, provider_name, mode_name)
-    try:
-        from formatters import to_telegram  # noqa: PLC0415
-        from providers.llm import LLMSummarizer  # noqa: PLC0415
-        from transcript import Transcript  # noqa: PLC0415
 
+    from formatters import to_telegram  # noqa: PLC0415
+    from providers.llm import LLMSummarizer  # noqa: PLC0415
+    from transcript import Transcript  # noqa: PLC0415
+
+    try:
         tr = Transcript.from_file(transcript_path)
+    except OSError as exc:
+        typer.echo(f"Error reading transcript: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
         summarizer = LLMSummarizer(
             model=model or settings.model,
             api_key=settings.api_key,
@@ -125,10 +136,8 @@ def summarize(
         )
         raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
-    except typer.Exit:
-        raise
     except Exception as exc:
-        typer.echo(f"Summarization error: {exc}", err=True)
+        typer.echo(f"LLM error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     typer.echo(summary)
@@ -155,7 +164,6 @@ def run(
     """Run the full pipeline: transcribe audio, then summarize."""
     from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
     from formatters import to_telegram  # noqa: PLC0415
-    from pipeline import run_pipeline  # noqa: PLC0415
     from prompts import PROMPTS  # noqa: PLC0415
     from providers.llm import LLMSummarizer  # noqa: PLC0415
     from providers.whisper import WhisperTranscriber  # noqa: PLC0415
@@ -189,23 +197,29 @@ def run(
     _ensure_output(transcript_path)
     _ensure_output(summary_path)
 
-    transcriber = WhisperTranscriber(settings.whisper_model)
     try:
-        tr, formatted = run_pipeline(
-            audio=audio_path,
-            transcriber=transcriber,
-            summarizer=LLMSummarizer(
-                model=model or settings.model,
-                api_key=settings.api_key,
-                base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
-                max_chars=settings.max_transcript_chars,
-                prompt_template=PROMPTS[mode_name],
-            ),
-            formatter=to_telegram,
-            language=language or settings.language,
-        )
+        transcriber = WhisperTranscriber(settings.whisper_model)
     except Exception as exc:
-        typer.echo(f"Pipeline error: {exc}", err=True)
+        typer.echo(f"Error loading Whisper model: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        tr = transcriber.transcribe(audio_path, language or settings.language)
+    except Exception as exc:
+        typer.echo(f"Transcription error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        summarizer = LLMSummarizer(
+            model=model or settings.model,
+            api_key=settings.api_key,
+            base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
+            max_chars=settings.max_transcript_chars,
+            prompt_template=PROMPTS[mode_name],
+        )
+        formatted = to_telegram(summarizer.summarize(tr.to_text()))
+    except Exception as exc:
+        typer.echo(f"LLM error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     try:
