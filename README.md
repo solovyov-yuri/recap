@@ -155,7 +155,8 @@ uv run recap batch recordings/ -p openai --model gpt-4o
 
 Для каждого файла `{name}.{ext}` создаются:
 - `{name}.txt` — транскрипция
-- `{name}_summary.txt` — саммари
+- `{name}_summary.txt` — саммари (формат `telegram`, по умолчанию)
+- `{name}_summary.json` — саммари (формат `json`, при `-f json`)
 
 Если в папке есть два файла с одинаковым именем, но разными расширениями (`call.wav` и `call.mp3`), команда завершается с ошибкой до обработки — чтобы не затирать результаты. Если отдельные файлы не удалось обработать, batch продолжает работу и в конце выводит счётчик `N succeeded, M failed`; exit code 1 при любых ошибках.
 
@@ -174,6 +175,13 @@ uv run recap summarize call.txt -m brief
 uv run recap summarize call.txt -m detailed -p openai --model gpt-4o
 ```
 
+**JSON-вывод** (статусные сообщения идут в stderr, stdout — чистый JSON):
+```bash
+uv run recap summarize call.txt -f json
+uv run recap summarize call.txt -f json > summary.json
+uv run recap run audio.wav -f json > summary.json
+```
+
 ### Опции
 
 | Опция | Команды | Описание |
@@ -182,6 +190,7 @@ uv run recap summarize call.txt -m detailed -p openai --model gpt-4o
 | `-o, --output-dir PATH` | batch | Папка вывода (по умолчанию — папка с аудио) |
 | `-l, --language TEXT` | transcribe, run, batch | Язык аудио (`ru`, `en`, …) |
 | `-m, --mode TEXT` | summarize, run, batch | Режим: `brief` \| `medium` \| `detailed` |
+| `-f, --format TEXT` | summarize, run, batch | Формат вывода: `telegram` (по умолчанию) \| `json` |
 | `-p, --provider TEXT` | summarize, run, batch | Провайдер (см. таблицу выше) |
 | `--model TEXT` | summarize, run, batch | Модель LLM (переопределяет config) |
 | `--transcript PATH` | run | Путь для промежуточной транскрипции |

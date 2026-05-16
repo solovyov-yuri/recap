@@ -331,6 +331,48 @@ def test_batch_empty_transcript_skips_llm(tmp_path: Path, monkeypatch: pytest.Mo
     assert "1 succeeded, 0 failed" in result.output
 
 
+def test_summarize_format_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello world\n", encoding="utf-8")
+    out = tmp_path / "out.txt"
+
+    import providers.llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", lambda self, text: "summary text")
+    result = runner.invoke(app, ["summarize", str(transcript), "-f", "json", "-o", str(out)])
+    assert result.exit_code == 0
+    import json
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["mode"] == "medium"
+    assert data["summary"] == "summary text"
+
+
+def test_summarize_format_json_stdout_is_pure_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """stdout must be parseable as JSON — status messages must go to stderr only."""
+    import json
+
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello world\n", encoding="utf-8")
+
+    import providers.llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", lambda self, text: "clean summary")
+    result = runner.invoke(app, ["summarize", str(transcript), "-f", "json"])
+    assert result.exit_code == 0
+    # result.stdout is pure stdout (Click 8 separates stdout/stderr)
+    data = json.loads(result.stdout)
+    assert data["summary"] == "clean summary"
+    assert "Summary saved to" in result.stderr
+
+
+def test_summarize_unknown_format(tmp_path: Path) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello\n", encoding="utf-8")
+    result = runner.invoke(app, ["summarize", str(transcript), "-f", "html"])
+    assert result.exit_code == 1
+    assert "format" in result.output.lower()
+
+
 def test_summarize_llm_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     transcript = tmp_path / "t.txt"
     transcript.write_text("[00:00] hello world\n", encoding="utf-8")

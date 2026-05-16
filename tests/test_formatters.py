@@ -1,6 +1,9 @@
+import json
+
 import pytest
 
-from formatters import to_plain, to_telegram
+from formatters import to_json, to_plain, to_telegram
+from models import MeetingSummary
 
 
 @pytest.mark.parametrize("input_text, expected", [
@@ -47,6 +50,35 @@ def test_to_plain_multiline_think() -> None:
 # Special character behaviour (Telegram Markdown v1 — no backslash escaping).
 # These tests document current pass-through behaviour. Unbalanced _ or ` may
 # cause Telegram to reject the message; this is a known v1 limitation.
+
+def test_to_json_structure() -> None:
+    s = MeetingSummary(raw="LLM output", mode="medium")
+    result = json.loads(to_json(s))
+    assert result["mode"] == "medium"
+    assert result["summary"] == "LLM output"
+
+
+def test_to_json_strips_think_tags() -> None:
+    s = MeetingSummary(raw="<think>internal</think>actual summary", mode="brief")
+    result = json.loads(to_json(s))
+    assert result["summary"] == "actual summary"
+    assert "<think>" not in result["summary"]
+
+
+def test_to_json_valid_json() -> None:
+    s = MeetingSummary(raw='Привет "мир"\nновая строка', mode="detailed")
+    output = to_json(s)
+    parsed = json.loads(output)
+    assert parsed["summary"] == 'Привет "мир"\nновая строка'
+
+
+def test_to_json_preserves_unicode() -> None:
+    s = MeetingSummary(raw="Итог встречи: всё решено", mode="medium")
+    output = to_json(s)
+    assert "Итог встречи" in output
+    parsed = json.loads(output)
+    assert "Итог встречи" in parsed["summary"]
+
 
 @pytest.mark.parametrize("input_text, expected", [
     # Underscores in plain text pass through unchanged
