@@ -19,3 +19,4 @@ data/*
 
 # Local config (contains secrets / personal paths)
 config.yaml
+.claude/

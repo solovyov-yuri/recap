@@ -1,75 +1,170 @@
 from __future__ import annotations
 
-import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+PROVIDER_PRESETS: dict[str, str | None] = {
+    "openai": None,
+    "xai": "https://api.x.ai/v1",
+    "ollama": "http://localhost:11434/v1",
+    "lm-studio": "http://localhost:1234/v1",
+    "vllm": "http://localhost:8000/v1",
+}
+
+TRANSCRIBER_PROVIDERS: frozenset[str] = frozenset({"faster-whisper"})
+
+_VALID_WHISPER_DEVICES = {"cuda", "cpu", "auto"}
+_VALID_WHISPER_COMPUTE_TYPES = {"default", "float16", "int8", "int8_float16", "float32"}
 
 
 class ConfigError(ValueError):
     pass
 
 
-PROVIDER_PRESETS: dict[str, str | None] = {
-    "openai": None,
-    "ollama": "http://localhost:11434/v1",
-    "lm-studio": "http://localhost:1234/v1",
-    "vllm": "http://localhost:8000/v1",
-}
+@dataclass(frozen=True)
+class TranscriptionModelSettings:
+    provider: str = "faster-whisper"
+    name: str = "large-v3"
+    device: str = "cuda"
+    compute_type: str = "default"
+    beam_size: int = 5
+    vad_filter: bool = True
+    condition_on_previous_text: bool = True
 
-_KNOWN_FIELDS = {
-    "audio",
-    "transcript",
-    "summary",
-    "transcription_language",
-    "summary_language",
-    "whisper_model",
+
+@dataclass(frozen=True)
+class TranscriptionSettings:
+    language: str = "ru"
+    model: TranscriptionModelSettings = field(default_factory=TranscriptionModelSettings)
+
+
+@dataclass(frozen=True)
+class SummarizationModelSettings:
+    provider: str = "ollama"
+    name: str = "qwen3.5:latest"
+    api_key: str | None = None
+    base_url: str | None = None
+
+
+@dataclass(frozen=True)
+class SummarizationSettings:
+    # language defaults to None → factory falls back to "ru". The transcription
+    # language is deliberately NOT inherited, so English audio still yields a
+    # Russian summary unless summarization.language is set explicitly.
+    language: str | None = None
+    mode: str = "medium"
+    max_transcript_chars: int = 60_000
+    timeout_seconds: float = 60.0
+    retries: int = 2
+    chunking_mode: str = "chunk"
+    model: SummarizationModelSettings = field(default_factory=SummarizationModelSettings)
+
+
+# ── Schema: allowed keys per section ────────────────────────────────────────────
+
+_TOP_LEVEL_KEYS = {"audio", "transcript", "summary", "transcription", "summarization", "privacy_ack"}
+_TRANSCRIPTION_KEYS = {"language", "model"}
+_TRANSCRIPTION_MODEL_KEYS = {
     "provider",
-    "model",
-    "api_key",
-    "base_url",
-    "max_transcript_chars",
-    "summary_mode",
-    "privacy_ack",
-    "llm_timeout_seconds",
-    "llm_retries",
-    "whisper_device",
-    "whisper_compute_type",
-    "whisper_beam_size",
-    "whisper_vad_filter",
-    "whisper_condition_on_previous_text",
-    "chunking_mode",
+    "name",
+    "device",
+    "compute_type",
+    "beam_size",
+    "vad_filter",
+    "condition_on_previous_text",
 }
+_SUMMARIZATION_KEYS = {
+    "language",
+    "mode",
+    "max_transcript_chars",
+    "timeout_seconds",
+    "retries",
+    "chunking_mode",
+    "model",
+}
+_SUMMARIZATION_MODEL_KEYS = {"provider", "name", "api_key", "base_url"}
 
-_ENV_MAP: dict[str, str] = {
+# ── Environment variable maps (one per section) ─────────────────────────────────
+
+_ENV_TOP = {
     "RECAP_AUDIO": "audio",
     "RECAP_TRANSCRIPT": "transcript",
     "RECAP_SUMMARY": "summary",
-    "RECAP_TRANSCRIPTION_LANGUAGE": "transcription_language",
-    "RECAP_SUMMARY_LANGUAGE": "summary_language",
-    "RECAP_WHISPER_MODEL": "whisper_model",
-    "RECAP_PROVIDER": "provider",
-    "RECAP_MODEL": "model",
-    "RECAP_API_KEY": "api_key",
-    "RECAP_BASE_URL": "base_url",
-    "RECAP_MAX_TRANSCRIPT_CHARS": "max_transcript_chars",
-    "RECAP_SUMMARY_MODE": "summary_mode",
     "RECAP_PRIVACY_ACK": "privacy_ack",
-    "RECAP_LLM_TIMEOUT": "llm_timeout_seconds",
-    "RECAP_LLM_RETRIES": "llm_retries",
-    "RECAP_WHISPER_DEVICE": "whisper_device",
-    "RECAP_WHISPER_COMPUTE_TYPE": "whisper_compute_type",
-    "RECAP_WHISPER_BEAM_SIZE": "whisper_beam_size",
-    "RECAP_WHISPER_VAD_FILTER": "whisper_vad_filter",
-    "RECAP_WHISPER_CONDITION_ON_PREVIOUS_TEXT": "whisper_condition_on_previous_text",
-    "RECAP_CHUNKING_MODE": "chunking_mode",
+}
+_ENV_TRANSCRIPTION = {
+    "RECAP_TRANSCRIPTION_LANGUAGE": "language",
+}
+_ENV_TRANSCRIPTION_MODEL = {
+    "RECAP_TRANSCRIPTION_MODEL_PROVIDER": "provider",
+    "RECAP_TRANSCRIPTION_MODEL_NAME": "name",
+    "RECAP_TRANSCRIPTION_MODEL_DEVICE": "device",
+    "RECAP_TRANSCRIPTION_MODEL_COMPUTE_TYPE": "compute_type",
+    "RECAP_TRANSCRIPTION_MODEL_BEAM_SIZE": "beam_size",
+    "RECAP_TRANSCRIPTION_MODEL_VAD_FILTER": "vad_filter",
+    "RECAP_TRANSCRIPTION_MODEL_CONDITION_ON_PREVIOUS_TEXT": "condition_on_previous_text",
+}
+_ENV_SUMMARIZATION = {
+    "RECAP_SUMMARIZATION_LANGUAGE": "language",
+    "RECAP_SUMMARIZATION_MODE": "mode",
+    "RECAP_SUMMARIZATION_MAX_TRANSCRIPT_CHARS": "max_transcript_chars",
+    "RECAP_SUMMARIZATION_TIMEOUT_SECONDS": "timeout_seconds",
+    "RECAP_SUMMARIZATION_RETRIES": "retries",
+    "RECAP_SUMMARIZATION_CHUNKING_MODE": "chunking_mode",
+}
+_ENV_SUMMARIZATION_MODEL = {
+    "RECAP_SUMMARIZATION_MODEL_PROVIDER": "provider",
+    "RECAP_SUMMARIZATION_MODEL_NAME": "name",
+    "RECAP_SUMMARIZATION_MODEL_API_KEY": "api_key",
+    "RECAP_SUMMARIZATION_MODEL_BASE_URL": "base_url",
 }
 
-_VALID_WHISPER_DEVICES = {"cuda", "cpu", "auto"}
-_VALID_WHISPER_COMPUTE_TYPES = {"default", "float16", "int8", "int8_float16", "float32"}
-_BOOL_FIELDS = {"privacy_ack", "whisper_vad_filter", "whisper_condition_on_previous_text"}
+_TRUE_STRINGS = ("true", "1", "yes")
+
+
+# ── Coercion helpers (operate in place on a working dict) ────────────────────────
+
+
+def _coerce_bool(d: dict, key: str) -> None:
+    if key in d:
+        val = d[key]
+        d[key] = val.lower() in _TRUE_STRINGS if isinstance(val, str) else bool(val)
+
+
+def _coerce_positive_int(d: dict, key: str, label: str) -> None:
+    if key not in d:
+        return
+    try:
+        d[key] = int(d[key])
+    except (ValueError, TypeError):
+        raise ConfigError(f"'{label}' must be a positive integer, got {d[key]!r}")
+    if d[key] <= 0:
+        raise ConfigError(f"'{label}' must be a positive integer, got {d[key]}")
+
+
+def _coerce_section(raw: dict, key: str) -> dict:
+    """Return a shallow copy of a nested mapping section, validating its type."""
+    section = raw.get(key)
+    if section is None:
+        return {}
+    if not isinstance(section, dict):
+        raise ConfigError(f"'{key}' must be a mapping, got {type(section).__name__}")
+    return dict(section)
+
+
+def _reject_unknown(data: dict, allowed: set[str], prefix: str) -> None:
+    for key in data:
+        if key in allowed:
+            continue
+        location = f"{prefix}.{key}" if prefix else key
+        raise ConfigError(f"Unknown config key: {location!r}.")
+
+
+def _apply_env(data: dict, env_map: dict[str, str]) -> None:
+    for env_var, key in env_map.items():
+        if (value := os.environ.get(env_var)) is not None:
+            data[key] = value
 
 
 @dataclass(frozen=True)
@@ -77,145 +172,126 @@ class Settings:
     audio: Path = Path("data/meeting.wav")
     transcript: Path = Path("data/transcript.txt")
     summary: Path = Path("data/summary.txt")
-    transcription_language: str = "ru"
-    summary_language: str | None = None
-    whisper_model: str = "large-v3"
-    provider: str = "ollama"
-    model: str = "qwen3.5:latest"
-    api_key: str | None = None
-    base_url: str | None = None
-    max_transcript_chars: int = 60_000
-    summary_mode: str = "medium"
+    transcription: TranscriptionSettings = field(default_factory=TranscriptionSettings)
+    summarization: SummarizationSettings = field(default_factory=SummarizationSettings)
     privacy_ack: bool = False
-    llm_timeout_seconds: float = 60.0
-    llm_retries: int = 2
-    whisper_device: str = "cuda"
-    whisper_compute_type: str = "default"
-    whisper_beam_size: int = 5
-    whisper_vad_filter: bool = True
-    whisper_condition_on_previous_text: bool = True
-    chunking_mode: str = "chunk"
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:
-        data: dict = {}
+        raw: dict = {}
 
         if config_path.exists():
             import yaml  # noqa: PLC0415
 
             with config_path.open(encoding="utf-8") as f:
                 try:
-                    raw = yaml.safe_load(f)
+                    parsed = yaml.safe_load(f)
                 except yaml.YAMLError as exc:
                     raise ConfigError(f"config.yaml is not valid YAML: {exc}") from exc
-            if raw is not None and not isinstance(raw, dict):
-                raise ConfigError(f"config.yaml must be a YAML mapping, got {type(raw).__name__}")
-            data = raw or {}
-            # Deprecated alias: 'language' was renamed to 'transcription_language'.
-            if "language" in data:
-                if "transcription_language" not in data:
-                    logger.warning("config.yaml: 'language' is deprecated, rename it to 'transcription_language'")
-                    data["transcription_language"] = data.pop("language")
-                else:
-                    logger.warning(
-                        "config.yaml: 'language' is deprecated and ignored ('transcription_language' is already set)"
-                    )
-                    data.pop("language")
-            for key in set(data) - _KNOWN_FIELDS:
-                logger.warning("config.yaml: unknown key %r (ignored)", key)
-            data = {k: v for k, v in data.items() if k in _KNOWN_FIELDS}
+            if parsed is not None and not isinstance(parsed, dict):
+                raise ConfigError(f"config.yaml must be a YAML mapping, got {type(parsed).__name__}")
+            raw = parsed or {}
 
-        for env_var, field in _ENV_MAP.items():
-            if (value := os.environ.get(env_var)) is not None:
-                data[field] = value
+        _reject_unknown(raw, _TOP_LEVEL_KEYS, prefix="")
 
-        # Deprecated alias: RECAP_LANGUAGE was renamed to RECAP_TRANSCRIPTION_LANGUAGE.
-        if (value := os.environ.get("RECAP_LANGUAGE")) is not None:
-            if "transcription_language" not in data:
-                logger.warning("RECAP_LANGUAGE is deprecated, use RECAP_TRANSCRIPTION_LANGUAGE instead")
-                data["transcription_language"] = value
-            else:
-                logger.warning("RECAP_LANGUAGE is deprecated and ignored (RECAP_TRANSCRIPTION_LANGUAGE is already set)")
+        top = {k: raw[k] for k in ("audio", "transcript", "summary", "privacy_ack") if k in raw}
+        transcription = _coerce_section(raw, "transcription")
+        transcription_model = _coerce_section(transcription, "model")
+        summarization = _coerce_section(raw, "summarization")
+        summarization_model = _coerce_section(summarization, "model")
 
-        if "api_key" not in data and (value := os.environ.get("OPENAI_API_KEY")):
-            data["api_key"] = value
+        _reject_unknown(transcription, _TRANSCRIPTION_KEYS, prefix="transcription")
+        _reject_unknown(transcription_model, _TRANSCRIPTION_MODEL_KEYS, prefix="transcription.model")
+        _reject_unknown(summarization, _SUMMARIZATION_KEYS, prefix="summarization")
+        _reject_unknown(summarization_model, _SUMMARIZATION_MODEL_KEYS, prefix="summarization.model")
+        transcription.pop("model", None)
+        summarization.pop("model", None)
 
-        for field in ("audio", "transcript", "summary"):
-            if field in data:
+        _apply_env(top, _ENV_TOP)
+        _apply_env(transcription, _ENV_TRANSCRIPTION)
+        _apply_env(transcription_model, _ENV_TRANSCRIPTION_MODEL)
+        _apply_env(summarization, _ENV_SUMMARIZATION)
+        _apply_env(summarization_model, _ENV_SUMMARIZATION_MODEL)
+
+        # ── Coerce + validate ───────────────────────────────────────────────────
+        for path_field in ("audio", "transcript", "summary"):
+            if path_field in top:
                 try:
-                    data[field] = Path(data[field])
+                    top[path_field] = Path(top[path_field])
                 except TypeError:
-                    raise ConfigError(f"'{field}' must be a file path string, got {data[field]!r}")
+                    raise ConfigError(f"'{path_field}' must be a file path string, got {top[path_field]!r}")
 
-        if "max_transcript_chars" in data:
+        _coerce_bool(top, "privacy_ack")
+        _coerce_bool(transcription_model, "vad_filter")
+        _coerce_bool(transcription_model, "condition_on_previous_text")
+        _coerce_positive_int(transcription_model, "beam_size", "transcription.model.beam_size")
+        _coerce_positive_int(summarization, "max_transcript_chars", "summarization.max_transcript_chars")
+
+        if "timeout_seconds" in summarization:
             try:
-                data["max_transcript_chars"] = int(data["max_transcript_chars"])
+                summarization["timeout_seconds"] = float(summarization["timeout_seconds"])
             except (ValueError, TypeError):
-                raise ConfigError(f"'max_transcript_chars' must be an integer, got {data['max_transcript_chars']!r}")
-            if data["max_transcript_chars"] <= 0:
                 raise ConfigError(
-                    f"'max_transcript_chars' must be a positive integer, got {data['max_transcript_chars']}"
+                    f"'summarization.timeout_seconds' must be a number, got {summarization['timeout_seconds']!r}"
+                )
+            if summarization["timeout_seconds"] <= 0:
+                raise ConfigError(
+                    f"'summarization.timeout_seconds' must be positive, got {summarization['timeout_seconds']}"
                 )
 
-        if "llm_timeout_seconds" in data:
+        if "retries" in summarization:
             try:
-                data["llm_timeout_seconds"] = float(data["llm_timeout_seconds"])
+                summarization["retries"] = int(summarization["retries"])
             except (ValueError, TypeError):
-                raise ConfigError(f"'llm_timeout_seconds' must be a number, got {data['llm_timeout_seconds']!r}")
-            if data["llm_timeout_seconds"] <= 0:
-                raise ConfigError(f"'llm_timeout_seconds' must be positive, got {data['llm_timeout_seconds']}")
+                raise ConfigError(
+                    f"'summarization.retries' must be a non-negative integer, got {summarization['retries']!r}"
+                )
+            if summarization["retries"] < 0:
+                raise ConfigError(f"'summarization.retries' must be >= 0, got {summarization['retries']}")
 
-        if "llm_retries" in data:
-            try:
-                data["llm_retries"] = int(data["llm_retries"])
-            except (ValueError, TypeError):
-                raise ConfigError(f"'llm_retries' must be a non-negative integer, got {data['llm_retries']!r}")
-            if data["llm_retries"] < 0:
-                raise ConfigError(f"'llm_retries' must be >= 0, got {data['llm_retries']}")
+        if (provider := transcription_model.get("provider")) is not None and provider not in TRANSCRIBER_PROVIDERS:
+            available = ", ".join(sorted(TRANSCRIBER_PROVIDERS))
+            raise ConfigError(f"'transcription.model.provider' must be one of: {available}. Got {provider!r}")
 
-        for field in _BOOL_FIELDS:
-            if field in data:
-                val = data[field]
-                data[field] = val.lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
-
-        if "whisper_beam_size" in data:
-            try:
-                data["whisper_beam_size"] = int(data["whisper_beam_size"])
-            except (ValueError, TypeError):
-                raise ConfigError(f"'whisper_beam_size' must be a positive integer, got {data['whisper_beam_size']!r}")
-            if data["whisper_beam_size"] <= 0:
-                raise ConfigError(f"'whisper_beam_size' must be a positive integer, got {data['whisper_beam_size']}")
-
-        if "whisper_device" in data and data["whisper_device"] not in _VALID_WHISPER_DEVICES:
+        if (device := transcription_model.get("device")) is not None and device not in _VALID_WHISPER_DEVICES:
             available = ", ".join(sorted(_VALID_WHISPER_DEVICES))
-            raise ConfigError(f"'whisper_device' must be one of: {available}. Got {data['whisper_device']!r}")
+            raise ConfigError(f"'transcription.model.device' must be one of: {available}. Got {device!r}")
 
-        if "whisper_compute_type" in data and data["whisper_compute_type"] not in _VALID_WHISPER_COMPUTE_TYPES:
+        if (
+            compute_type := transcription_model.get("compute_type")
+        ) is not None and compute_type not in _VALID_WHISPER_COMPUTE_TYPES:
             available = ", ".join(sorted(_VALID_WHISPER_COMPUTE_TYPES))
-            raise ConfigError(
-                f"'whisper_compute_type' must be one of: {available}. Got {data['whisper_compute_type']!r}"
-            )
+            raise ConfigError(f"'transcription.model.compute_type' must be one of: {available}. Got {compute_type!r}")
 
-        if "chunking_mode" in data and data["chunking_mode"] not in ("chunk", "truncate"):
-            raise ConfigError(f"'chunking_mode' must be 'chunk' or 'truncate'. Got {data['chunking_mode']!r}")
+        if (chunking := summarization.get("chunking_mode")) is not None and chunking not in ("chunk", "truncate"):
+            raise ConfigError(f"'summarization.chunking_mode' must be 'chunk' or 'truncate'. Got {chunking!r}")
 
-        if "provider" in data and data["provider"] not in PROVIDER_PRESETS:
+        if (sum_provider := summarization_model.get("provider")) is not None and sum_provider not in PROVIDER_PRESETS:
             available = ", ".join(PROVIDER_PRESETS)
-            raise ConfigError(f"'provider' must be one of: {available}. Got {data['provider']!r}")
+            raise ConfigError(f"'summarization.model.provider' must be one of: {available}. Got {sum_provider!r}")
 
-        if "summary_mode" in data:
+        if (mode := summarization.get("mode")) is not None:
             from prompts import SUMMARY_MODES  # noqa: PLC0415
 
-            if data["summary_mode"] not in SUMMARY_MODES:
+            if mode not in SUMMARY_MODES:
                 available = ", ".join(sorted(SUMMARY_MODES))
-                raise ConfigError(f"'summary_mode' must be one of: {available}. Got {data['summary_mode']!r}")
+                raise ConfigError(f"'summarization.mode' must be one of: {available}. Got {mode!r}")
 
-        if "summary_language" in data and data["summary_language"] is not None:
+        if (lang := summarization.get("language")) is not None:
             from prompts import PROMPTS  # noqa: PLC0415
 
-            lang = data["summary_language"]
             if lang not in PROMPTS:
                 available = ", ".join(sorted(PROMPTS))
-                raise ConfigError(f"'summary_language' must be one of: {available}. Got {lang!r}")
+                raise ConfigError(f"'summarization.language' must be one of: {available}. Got {lang!r}")
 
-        return cls(**data)
+        return cls(
+            **top,
+            transcription=TranscriptionSettings(
+                **transcription,
+                model=TranscriptionModelSettings(**transcription_model),
+            ),
+            summarization=SummarizationSettings(
+                **summarization,
+                model=SummarizationModelSettings(**summarization_model),
+            ),
+        )

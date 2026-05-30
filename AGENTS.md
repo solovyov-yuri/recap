@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project overview
 
-`meeting-sum` is a meeting audio transcription and summarization tool. It transcribes audio via `faster-whisper` (CUDA) and generates a Telegram-formatted summary using any OpenAI-compatible LLM (Ollama, lm-studio, vllm, OpenAI).
+`meeting-sum` is a meeting audio transcription and summarization tool. It transcribes audio via `faster-whisper` (CUDA) and generates a Telegram-formatted summary using any OpenAI-compatible LLM (OpenAI, xAI, Ollama, lm-studio, vllm).
 
 ## Commands
 
@@ -44,45 +44,74 @@ uv run mypy src/                         # type check
 
 Settings are resolved in priority order: **CLI flags > env vars > config.yaml > defaults**.
 
+Config is a **nested** schema with two sections — `transcription` and `summarization` — each holding a `model` sub-section. There is no backwards compatibility with the old flat keys: any unknown key (legacy or otherwise) raises `ConfigError` with a generic "Unknown config key" message.
+
 **`config.yaml`** (optional, at project root):
 ```yaml
 audio: data/meeting.wav
 transcript: data/transcript.txt
 summary: data/summary.txt
-transcription_language: ru   # language passed to Whisper
-summary_language: ru         # language for LLM prompts (optional, defaults to "ru")
-whisper_model: large-v3
-provider: ollama          # openai | ollama | lm-studio | vllm
-model: qwen3.5:latest
-api_key: null
-base_url: null
-max_transcript_chars: 60000
-summary_mode: medium      # brief | medium | detailed
-privacy_ack: false        # set true to suppress external-endpoint warning
+transcription:
+  language: ru                 # language passed to Whisper
+  model:
+    provider: faster-whisper   # only faster-whisper is supported
+    name: large-v3
+    device: cuda               # cuda | cpu | auto
+    compute_type: default      # default | float16 | int8 | int8_float16 | float32
+    beam_size: 5
+    vad_filter: true
+    condition_on_previous_text: true
+summarization:
+  language: null               # LLM prompt language; null → "ru" (transcription.language NOT inherited)
+  mode: medium                 # brief | medium | detailed
+  max_transcript_chars: 60000
+  timeout_seconds: 60
+  retries: 2
+  chunking_mode: chunk         # chunk | truncate
+  model:
+    provider: ollama           # openai | xai | ollama | lm-studio | vllm
+    name: qwen3.5:latest
+    api_key: null
+    base_url: null
+privacy_ack: false             # set true to suppress external-endpoint warning
 ```
 
-**Environment variables** (override config.yaml):
+**Environment variables** (override config.yaml; names mirror the nested path):
 
 | Variable | Config field |
 |---|---|
 | `RECAP_AUDIO` | `audio` |
 | `RECAP_TRANSCRIPT` | `transcript` |
 | `RECAP_SUMMARY` | `summary` |
-| `RECAP_TRANSCRIPTION_LANGUAGE` | `transcription_language` |
-| `RECAP_SUMMARY_LANGUAGE` | `summary_language` |
-| `RECAP_WHISPER_MODEL` | `whisper_model` |
-| `RECAP_PROVIDER` | `provider` |
-| `RECAP_MODEL` | `model` |
-| `RECAP_API_KEY` | `api_key` |
-| `RECAP_BASE_URL` | `base_url` |
-| `RECAP_MAX_TRANSCRIPT_CHARS` | `max_transcript_chars` |
-| `RECAP_SUMMARY_MODE` | `summary_mode` |
 | `RECAP_PRIVACY_ACK` | `privacy_ack` |
-| `OPENAI_API_KEY` | `api_key` (fallback) |
+| `RECAP_TRANSCRIPTION_LANGUAGE` | `transcription.language` |
+| `RECAP_TRANSCRIPTION_MODEL_PROVIDER` | `transcription.model.provider` |
+| `RECAP_TRANSCRIPTION_MODEL_NAME` | `transcription.model.name` |
+| `RECAP_TRANSCRIPTION_MODEL_DEVICE` | `transcription.model.device` |
+| `RECAP_TRANSCRIPTION_MODEL_COMPUTE_TYPE` | `transcription.model.compute_type` |
+| `RECAP_TRANSCRIPTION_MODEL_BEAM_SIZE` | `transcription.model.beam_size` |
+| `RECAP_TRANSCRIPTION_MODEL_VAD_FILTER` | `transcription.model.vad_filter` |
+| `RECAP_TRANSCRIPTION_MODEL_CONDITION_ON_PREVIOUS_TEXT` | `transcription.model.condition_on_previous_text` |
+| `RECAP_SUMMARIZATION_LANGUAGE` | `summarization.language` |
+| `RECAP_SUMMARIZATION_MODE` | `summarization.mode` |
+| `RECAP_SUMMARIZATION_MAX_TRANSCRIPT_CHARS` | `summarization.max_transcript_chars` |
+| `RECAP_SUMMARIZATION_TIMEOUT_SECONDS` | `summarization.timeout_seconds` |
+| `RECAP_SUMMARIZATION_RETRIES` | `summarization.retries` |
+| `RECAP_SUMMARIZATION_CHUNKING_MODE` | `summarization.chunking_mode` |
+| `RECAP_SUMMARIZATION_MODEL_PROVIDER` | `summarization.model.provider` |
+| `RECAP_SUMMARIZATION_MODEL_NAME` | `summarization.model.name` |
+| `RECAP_SUMMARIZATION_MODEL_API_KEY` | `summarization.model.api_key` |
+| `RECAP_SUMMARIZATION_MODEL_BASE_URL` | `summarization.model.base_url` |
+
+`summarization.language` defaults to `null`; the factory falls back to `"ru"`. It deliberately does not inherit `transcription.language`, so English audio still produces a Russian summary unless `summarization.language` or `--summary-language` is set explicitly.
+
+`summarization.max_transcript_chars` is the per-request LLM limit. Long transcripts are split into chunks by default (`summarization.chunking_mode: chunk`) or truncated at the last newline before this limit when `chunking_mode: truncate`.
+
+`summarization.mode` — controls the prompt template and output structure: `brief` (2-3 sentences), `medium` (topic + discussions + decisions), `detailed` (participants + timeline + tasks with owners).
 
 **Breaking changes:**
-- `language` field renamed to `transcription_language` (old name triggers a deprecation warning, still works).
-- `RECAP_LANGUAGE` renamed to `RECAP_TRANSCRIPTION_LANGUAGE` (same deprecation behaviour).
+- Config schema changed to nested `transcription` / `summarization` sections (each with a `model` sub-section). Old flat keys (`provider`, `model`, `whisper_model`, `summary_mode`, `max_transcript_chars`, `transcription_language`, `summary_language`, `chunking_mode`, …) are no longer supported and raise `ConfigError` with a generic "Unknown config key" message.
+- Old flat `RECAP_*` env vars (`RECAP_PROVIDER`, `RECAP_MODEL`, `RECAP_WHISPER_MODEL`, `RECAP_SUMMARY_MODE`, `RECAP_MAX_TRANSCRIPT_CHARS`, `RECAP_API_KEY`, `RECAP_BASE_URL`, `RECAP_LANGUAGE`, …) are replaced by the nested-path names above. There is no `OPENAI_API_KEY` fallback — set the key via `summarization.model.api_key` or `RECAP_SUMMARIZATION_MODEL_API_KEY`.
 - `-m` flag was reassigned from `--model` to `--mode`. Use `--model` (long form) for the LLM model name.
 
 ## Architecture
@@ -90,7 +119,7 @@ privacy_ack: false        # set true to suppress external-endpoint warning
 ```
 src/
 ├── cli.py           # Typer CLI — wires providers via factory, handles I/O, error boundary
-├── config.py        # frozen Settings dataclass; Settings.load() reads yaml then env vars
+├── config.py        # nested frozen Settings dataclasses; Settings.load() reads nested yaml then env vars
 ├── protocols.py     # Transcriber, Summarizer (typing.Protocol)
 ├── pipeline.py      # run_pipeline() — pure function, no disk I/O, returns (Transcript, str)
 ├── transcript.py    # Segment + Transcript dataclasses; from_file / to_text / to_file_format
@@ -120,9 +149,11 @@ tests/
 
 ## Key design rules
 
+**Nested config:** `Settings` is composed of frozen sub-dataclasses — `TranscriptionSettings` (with `TranscriptionModelSettings`) and `SummarizationSettings` (with `SummarizationModelSettings`). `Settings.load()` rejects unknown and legacy flat keys with `ConfigError`; there is no silent remapping. All sub-dataclasses are `frozen=True`.
+
 **Lazy imports:** `cli.py` never imports `providers.*` at top level — imports happen inside command bodies so `recap --help` is instant (no CUDA load).
 
-**Provider factory:** `providers/factory.py` is the single place that validates provider name, resolves base URL, selects prompt templates by language/mode, and constructs `LLMSummarizer` / `WhisperTranscriber`. CLI calls `make_summarizer()` and `make_transcriber()` — it does not construct providers directly.
+**Provider factory:** `providers/factory.py` is the single place that validates provider name (LLM and transcription), resolves base URL, selects prompt templates by language/mode, and constructs `LLMSummarizer` / `WhisperTranscriber` from the nested `settings.transcription` / `settings.summarization` sections. CLI calls `make_summarizer()` and `make_transcriber()` — it does not construct providers directly.
 
 **CUDA paths:** `providers/whisper.py._set_cuda_paths()` prepends `.venv` NVIDIA lib dirs to `PATH`/`LD_LIBRARY_PATH` before importing `faster_whisper`. Must happen before the `from faster_whisper import` line.
 
@@ -143,3 +174,5 @@ tests/
 **Adding a new summary mode:** add prompt constants in `prompts.py` and register them in `PROMPTS["ru"][name]`. Update `SUMMARY_MODES`. No other files need changing.
 
 **Adding a new summary language:** add system + mode constants in `prompts.py`, register in `PROMPTS["<lang>"]` and `CHUNK_PROMPTS["<lang>"]`. Config validation picks up the new language automatically.
+
+**Breaking change (v0.3):** `config.yaml` switched to a nested schema (`transcription` / `summarization`, each with a `model` sub-section). Old flat keys (`provider`, `model`, `whisper_model`, `summary_mode`, `max_transcript_chars`, `transcription_language`, `summary_language`, `chunking_mode`, …) and old flat `RECAP_*` env vars are no longer supported; they raise `ConfigError`. `OPENAI_API_KEY` is no longer used as a fallback; set `summarization.model.api_key` or `RECAP_SUMMARIZATION_MODEL_API_KEY`.

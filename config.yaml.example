@@ -1,49 +1,44 @@
 # Copy this file to config.yaml and adjust values as needed.
-# Priority: CLI options > config.yaml > defaults.
-
-# Provider: openai | ollama | lm-studio | vllm
-# Each preset has a built-in base_url. Override with base_url if needed.
-provider: ollama
-model: qwen3.5:latest
-
-# api_key: sk-...                          # required for openai; not needed for local providers
-# base_url: http://my-server:9000/v1       # overrides the provider preset URL
+# Priority: CLI options > env vars > config.yaml > defaults.
 
 # Paths (defaults shown)
 # audio: data/meeting.wav
 # transcript: data/transcript.txt
 # summary: data/summary.txt
 
-# Transcription
-# transcription_language: ru   # language passed to Whisper (was: language)
-# summary_language: ru         # language for LLM prompts; defaults to ru regardless of transcription_language
-# whisper_model: large-v3
-#
-# Whisper device and precision:
-#   device: cuda       — GPU (default); requires NVIDIA GPU with CUDA
-#   device: cpu        — CPU only; slower but no GPU required
-#   device: auto       — use GPU if available, otherwise CPU
-# whisper_device: cuda
-#
-#   compute_type: default      — auto-select: float16 for cuda, int8 for cpu/auto (recommended)
-#   compute_type: float16      — GPU-native, fast and accurate (not supported on CPU)
-#   compute_type: int8         — quantized, works on CPU and GPU, less RAM
-#   compute_type: int8_float16 — mixed precision, GPU only
-#   compute_type: float32      — full precision, CPU-compatible
-# whisper_compute_type: default
-#
-# whisper_beam_size: 5                   # higher = more accurate, slower
-# whisper_vad_filter: true               # skip silent segments
-# whisper_condition_on_previous_text: true  # improves coherence, disable for short clips
+transcription:
+  language: ru                 # language passed to Whisper
+  model:
+    provider: faster-whisper   # only faster-whisper is supported
+    name: large-v3
+    # Device and precision:
+    #   device: cuda  — GPU (default); requires NVIDIA GPU with CUDA
+    #   device: cpu   — CPU only; slower but no GPU required
+    #   device: auto  — use GPU if available, otherwise CPU
+    device: cuda
+    #   compute_type: default      — auto-select: float16 for cuda, int8 for cpu/auto (recommended)
+    #   compute_type: float16      — GPU-native, fast and accurate (not supported on CPU)
+    #   compute_type: int8         — quantized, works on CPU and GPU, less RAM
+    #   compute_type: int8_float16 — mixed precision, GPU only
+    #   compute_type: float32      — full precision, CPU-compatible
+    compute_type: default
+    beam_size: 5                          # higher = more accurate, slower
+    vad_filter: true                      # skip silent segments
+    condition_on_previous_text: true      # improves coherence, disable for short clips
+
+summarization:
+  # language: ru               # language for LLM prompts; defaults to ru regardless of transcription.language
+  mode: medium                 # brief | medium | detailed
+  max_transcript_chars: 60000  # per-request limit; long transcripts are split into chunks (chunking_mode: chunk)
+  timeout_seconds: 60          # seconds to wait for an LLM response before giving up
+  retries: 2                   # retries on timeout/connection errors (0 = no retries)
+  chunking_mode: chunk         # chunk (default): split, summarize each, then merge; truncate: cut at max_transcript_chars
+  model:
+    provider: ollama           # openai | xai | ollama | lm-studio | vllm
+    name: qwen3.5:latest
+    # api_key: sk-...                          # required for openai; not needed for local providers
+    # base_url: http://my-server:9000/v1       # overrides the provider preset URL
 
 # Privacy
 # Set to true to suppress the warning when transcript is sent to an external endpoint.
 # privacy_ack: false
-
-# LLM reliability
-# llm_timeout_seconds: 60    # seconds to wait for LLM response before giving up
-# llm_retries: 2             # number of retries on timeout/connection errors (0 = no retries)
-
-# Long transcript handling
-# chunking_mode: chunk       # chunk (default): split into chunks, summarize each, then merge
-#                            # truncate: old behaviour — cut at max_transcript_chars

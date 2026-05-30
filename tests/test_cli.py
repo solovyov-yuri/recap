@@ -61,7 +61,7 @@ def test_summarize_unknown_mode(tmp_path: Path) -> None:
 
 def test_help_does_not_load_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("provider: bad-provider\n", encoding="utf-8")
+    cfg.write_text("summarization:\n  model:\n    provider: bad-provider\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["summarize", "--help"])
     assert result.exit_code == 0
@@ -69,7 +69,7 @@ def test_help_does_not_load_config(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
 def test_config_error_propagates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("provider: bad-provider\n", encoding="utf-8")
+    cfg.write_text("summarization:\n  model:\n    provider: bad-provider\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["summarize", str(tmp_path / "t.txt")])
     assert result.exit_code == 1
