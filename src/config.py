@@ -22,80 +22,22 @@ class ConfigError(ValueError):
     pass
 
 
-@dataclass(frozen=True)
-class TranscriptionModelSettings:
-    provider: str = "faster-whisper"
-    name: str = "large-v3"
-    device: str = "cuda"
-    compute_type: str = "default"
-    beam_size: int = 5
-    vad_filter: bool = True
-    condition_on_previous_text: bool = True
-
-
-@dataclass(frozen=True)
-class TranscriptionSettings:
-    language: str = "ru"
-    model: TranscriptionModelSettings = field(default_factory=TranscriptionModelSettings)
-
-
-@dataclass(frozen=True)
-class SummarizationModelSettings:
-    provider: str = "ollama"
-    name: str = "qwen3.5:latest"
-    api_key: str | None = None
-    base_url: str | None = None
-
-
-@dataclass(frozen=True)
-class SummarizationSettings:
-    # language defaults to None → factory falls back to "ru". The transcription
-    # language is deliberately NOT inherited, so English audio still yields a
-    # Russian summary unless summarization.language is set explicitly.
-    language: str | None = None
-    mode: str = "medium"
-    max_transcript_chars: int = 60_000
-    timeout_seconds: float = 60.0
-    retries: int = 2
-    chunking_mode: str = "chunk"
-    model: SummarizationModelSettings = field(default_factory=SummarizationModelSettings)
-
-
-@dataclass(frozen=True)
-class PreprocessingSettings:
-    enabled: bool = False
-    sample_rate: int = 16000
-    channels: int = 1
-    codec: str = "pcm_s16le"
-    loudness_normalization: bool = False
-    target_lufs: float = -16.0
-    true_peak_db: float = -1.5
-    loudness_range: float = 11.0
-    highpass_hz: int | None = None
-    keep_temp: bool = False
-
-
-# ── Schema: allowed keys per section ────────────────────────────────────────────
-
-_TOP_LEVEL_KEYS = {"audio", "transcript", "summary", "transcription", "summarization", "privacy_ack", "preprocessing"}
-_TRANSCRIPTION_KEYS = {"language", "model"}
-_TRANSCRIPTION_MODEL_KEYS = {
-    "provider",
-    "name",
-    "device",
-    "compute_type",
-    "beam_size",
-    "vad_filter",
-    "condition_on_previous_text",
+PROVIDER_PRESETS: dict[str, str | None] = {
+    "openai":    None,
+    "xai":      "https://api.x.ai/v1",
+    "ollama":    "http://localhost:11434/v1",
+    "lm-studio": "http://localhost:1234/v1",
+    "vllm":      "http://localhost:8000/v1",
 }
-_SUMMARIZATION_KEYS = {
-    "language",
-    "mode",
-    "max_transcript_chars",
-    "timeout_seconds",
-    "retries",
-    "chunking_mode",
-    "model",
+
+_KNOWN_FIELDS = {
+    "audio", "transcript", "summary", "language",
+    "whisper_model", "provider", "model", "api_key", "base_url",
+    "max_transcript_chars", "summary_mode", "privacy_ack",
+    "llm_timeout_seconds", "llm_retries",
+    "whisper_device", "whisper_compute_type", "whisper_beam_size",
+    "whisper_vad_filter", "whisper_condition_on_previous_text",
+    "chunking_mode", "num_ctx",
 }
 _SUMMARIZATION_MODEL_KEYS = {"provider", "name", "api_key", "base_url"}
 _PREPROCESSING_KEYS = {
@@ -111,39 +53,28 @@ _PREPROCESSING_KEYS = {
     "keep_temp",
 }
 
-# ── Environment variable maps (one per section) ─────────────────────────────────
-
-_ENV_TOP = {
-    "RECAP_AUDIO": "audio",
-    "RECAP_TRANSCRIPT": "transcript",
-    "RECAP_SUMMARY": "summary",
-    "RECAP_PRIVACY_ACK": "privacy_ack",
-}
-_ENV_TRANSCRIPTION = {
-    "RECAP_TRANSCRIPTION_LANGUAGE": "language",
-}
-_ENV_TRANSCRIPTION_MODEL = {
-    "RECAP_TRANSCRIPTION_MODEL_PROVIDER": "provider",
-    "RECAP_TRANSCRIPTION_MODEL_NAME": "name",
-    "RECAP_TRANSCRIPTION_MODEL_DEVICE": "device",
-    "RECAP_TRANSCRIPTION_MODEL_COMPUTE_TYPE": "compute_type",
-    "RECAP_TRANSCRIPTION_MODEL_BEAM_SIZE": "beam_size",
-    "RECAP_TRANSCRIPTION_MODEL_VAD_FILTER": "vad_filter",
-    "RECAP_TRANSCRIPTION_MODEL_CONDITION_ON_PREVIOUS_TEXT": "condition_on_previous_text",
-}
-_ENV_SUMMARIZATION = {
-    "RECAP_SUMMARIZATION_LANGUAGE": "language",
-    "RECAP_SUMMARIZATION_MODE": "mode",
-    "RECAP_SUMMARIZATION_MAX_TRANSCRIPT_CHARS": "max_transcript_chars",
-    "RECAP_SUMMARIZATION_TIMEOUT_SECONDS": "timeout_seconds",
-    "RECAP_SUMMARIZATION_RETRIES": "retries",
-    "RECAP_SUMMARIZATION_CHUNKING_MODE": "chunking_mode",
-}
-_ENV_SUMMARIZATION_MODEL = {
-    "RECAP_SUMMARIZATION_MODEL_PROVIDER": "provider",
-    "RECAP_SUMMARIZATION_MODEL_NAME": "name",
-    "RECAP_SUMMARIZATION_MODEL_API_KEY": "api_key",
-    "RECAP_SUMMARIZATION_MODEL_BASE_URL": "base_url",
+_ENV_MAP: dict[str, str] = {
+    "RECAP_AUDIO":               "audio",
+    "RECAP_TRANSCRIPT":          "transcript",
+    "RECAP_SUMMARY":             "summary",
+    "RECAP_LANGUAGE":            "language",
+    "RECAP_WHISPER_MODEL":       "whisper_model",
+    "RECAP_PROVIDER":            "provider",
+    "RECAP_MODEL":               "model",
+    "RECAP_API_KEY":             "api_key",
+    "RECAP_BASE_URL":            "base_url",
+    "RECAP_MAX_TRANSCRIPT_CHARS":               "max_transcript_chars",
+    "RECAP_SUMMARY_MODE":                       "summary_mode",
+    "RECAP_PRIVACY_ACK":                        "privacy_ack",
+    "RECAP_LLM_TIMEOUT":                        "llm_timeout_seconds",
+    "RECAP_LLM_RETRIES":                        "llm_retries",
+    "RECAP_WHISPER_DEVICE":                     "whisper_device",
+    "RECAP_WHISPER_COMPUTE_TYPE":               "whisper_compute_type",
+    "RECAP_WHISPER_BEAM_SIZE":                  "whisper_beam_size",
+    "RECAP_WHISPER_VAD_FILTER":                 "whisper_vad_filter",
+    "RECAP_WHISPER_CONDITION_ON_PREVIOUS_TEXT": "whisper_condition_on_previous_text",
+    "RECAP_CHUNKING_MODE":                      "chunking_mode",
+    "RECAP_NUM_CTX":                            "num_ctx",
 }
 _ENV_PREPROCESSING = {
     "RECAP_PREPROCESSING_ENABLED": "enabled",
@@ -214,6 +145,15 @@ class Settings:
     summarization: SummarizationSettings = field(default_factory=SummarizationSettings)
     preprocessing: PreprocessingSettings = field(default_factory=PreprocessingSettings)
     privacy_ack: bool = False
+    llm_timeout_seconds: float = 60.0
+    llm_retries: int = 2
+    whisper_device: str = "cuda"
+    whisper_compute_type: str = "default"
+    whisper_beam_size: int = 5
+    whisper_vad_filter: bool = True
+    whisper_condition_on_previous_text: bool = True
+    chunking_mode: str = "chunk"
+    num_ctx: int | None = None
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:
@@ -305,8 +245,22 @@ class Settings:
             available = ", ".join(sorted(_VALID_WHISPER_COMPUTE_TYPES))
             raise ConfigError(f"'transcription.model.compute_type' must be one of: {available}. Got {compute_type!r}")
 
-        if (chunking := summarization.get("chunking_mode")) is not None and chunking not in ("chunk", "truncate"):
-            raise ConfigError(f"'summarization.chunking_mode' must be 'chunk' or 'truncate'. Got {chunking!r}")
+        if "num_ctx" in data:
+            try:
+                data["num_ctx"] = int(data["num_ctx"])
+            except (ValueError, TypeError):
+                raise ConfigError(
+                    f"'num_ctx' must be a positive integer, got {data['num_ctx']!r}"
+                )
+            if data["num_ctx"] <= 0:
+                raise ConfigError(
+                    f"'num_ctx' must be a positive integer, got {data['num_ctx']}"
+                )
+
+        if "chunking_mode" in data and data["chunking_mode"] not in ("chunk", "truncate"):
+            raise ConfigError(
+                f"'chunking_mode' must be 'chunk' or 'truncate'. Got {data['chunking_mode']!r}"
+            )
 
         if (sum_provider := summarization_model.get("provider")) is not None and sum_provider not in PROVIDER_PRESETS:
             available = ", ".join(PROVIDER_PRESETS)
