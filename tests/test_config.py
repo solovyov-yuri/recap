@@ -4,6 +4,7 @@ import pytest
 
 from config import (
     ConfigError,
+    PreprocessingSettings,
     Settings,
     SummarizationModelSettings,
     SummarizationSettings,
@@ -362,3 +363,139 @@ def test_invalid_summary_language_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RECAP_SUMMARIZATION_LANGUAGE", "fr")
     with pytest.raises(ConfigError, match="summarization.language"):
         Settings.load(config_path=Path("nonexistent.yaml"))
+
+
+# ── Preprocessing: defaults ──────────────────────────────────────────────────
+
+
+def test_preprocessing_defaults() -> None:
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert isinstance(s.preprocessing, PreprocessingSettings)
+    assert s.preprocessing.enabled is False
+    assert s.preprocessing.sample_rate == 16000
+    assert s.preprocessing.channels == 1
+    assert s.preprocessing.codec == "pcm_s16le"
+    assert s.preprocessing.loudness_normalization is False
+    assert s.preprocessing.highpass_hz is None
+    assert s.preprocessing.keep_temp is False
+
+
+# ── Preprocessing: YAML loading ──────────────────────────────────────────────
+
+
+def test_preprocessing_yaml_loads(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        "preprocessing:\n"
+        "  enabled: true\n"
+        "  sample_rate: 22050\n"
+        "  channels: 1\n"
+        "  loudness_normalization: true\n"
+        "  highpass_hz: 70\n",
+        encoding="utf-8",
+    )
+    s = Settings.load(config_path=cfg)
+    assert s.preprocessing.enabled is True
+    assert s.preprocessing.sample_rate == 22050
+    assert s.preprocessing.channels == 1
+    assert s.preprocessing.loudness_normalization is True
+    assert s.preprocessing.highpass_hz == 70
+
+
+def test_preprocessing_minimal_enabled(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  enabled: true\n", encoding="utf-8")
+    s = Settings.load(config_path=cfg)
+    assert s.preprocessing.enabled is True
+    assert s.preprocessing.sample_rate == 16000
+
+
+def test_preprocessing_highpass_null_yaml(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  highpass_hz: null\n", encoding="utf-8")
+    s = Settings.load(config_path=cfg)
+    assert s.preprocessing.highpass_hz is None
+
+
+# ── Preprocessing: env overrides ─────────────────────────────────────────────
+
+
+def test_preprocessing_env_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_PREPROCESSING_ENABLED", "true")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.preprocessing.enabled is True
+
+
+def test_preprocessing_env_sample_rate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_PREPROCESSING_SAMPLE_RATE", "16000")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.preprocessing.sample_rate == 16000
+
+
+# ── Preprocessing: unknown key ───────────────────────────────────────────────
+
+
+def test_preprocessing_unknown_key_fails(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  bogus: true\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="preprocessing.bogus"):
+        Settings.load(config_path=cfg)
+
+
+# ── Preprocessing: invalid values ────────────────────────────────────────────
+
+
+def test_preprocessing_invalid_sample_rate_zero(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  sample_rate: 0\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="sample_rate"):
+        Settings.load(config_path=cfg)
+
+
+def test_preprocessing_invalid_channels_zero(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  channels: 0\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="channels"):
+        Settings.load(config_path=cfg)
+
+
+def test_preprocessing_invalid_channels_three(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  channels: 3\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="channels"):
+        Settings.load(config_path=cfg)
+
+
+def test_preprocessing_invalid_codec(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  codec: mp3\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="codec"):
+        Settings.load(config_path=cfg)
+
+
+def test_preprocessing_invalid_highpass_negative(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  highpass_hz: -1\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="highpass_hz"):
+        Settings.load(config_path=cfg)
+
+
+def test_preprocessing_invalid_target_lufs_not_a_number(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  target_lufs: loud\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="target_lufs"):
+        Settings.load(config_path=cfg)
+
+
+def test_preprocessing_invalid_true_peak_db_not_a_number(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  true_peak_db: peak\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="true_peak_db"):
+        Settings.load(config_path=cfg)
+
+
+def test_preprocessing_invalid_loudness_range_not_a_number(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  loudness_range: wide\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="loudness_range"):
+        Settings.load(config_path=cfg)

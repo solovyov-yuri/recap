@@ -504,6 +504,142 @@ def test_run_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert "roadmap summary" in summary_out.read_text(encoding="utf-8")
 
 
+# ── preprocess command ────────────────────────────────────────────────────────
+
+
+def test_preprocess_help() -> None:
+    result = runner.invoke(app, ["preprocess", "--help"])
+    assert result.exit_code == 0
+
+
+def test_preprocess_missing_audio(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["preprocess", str(tmp_path / "nope.mp3")])
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower()
+
+
+def test_preprocess_with_explicit_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    audio = tmp_path / "input.mp3"
+    audio.write_bytes(b"\x00" * 16)
+    output = tmp_path / "out.wav"
+
+    import preprocessing as prep_mod
+
+    calls: list[tuple] = []
+
+    def fake_preprocess(a, o, s):
+        calls.append((a, o, s))
+        return o
+
+    monkeypatch.setattr(prep_mod, "preprocess_audio", fake_preprocess)
+
+    result = runner.invoke(app, ["preprocess", str(audio), "-o", str(output)])
+
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert calls[0][0] == audio
+    assert calls[0][1] == output
+    assert "Preprocessed audio saved to" in result.output
+
+
+def test_preprocess_default_output_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    audio = tmp_path / "meeting.mp3"
+    audio.write_bytes(b"\x00" * 16)
+
+    import preprocessing as prep_mod
+
+    calls: list[tuple] = []
+
+    def fake_preprocess(a, o, s):
+        calls.append((a, o, s))
+        return o
+
+    monkeypatch.setattr(prep_mod, "preprocess_audio", fake_preprocess)
+
+    result = runner.invoke(app, ["preprocess", str(audio)])
+
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    expected_output = audio.with_name("meeting.preprocessed.wav")
+    assert calls[0][1] == expected_output
+    assert "meeting.preprocessed.wav" in result.output
+
+
+def test_preprocess_runs_even_when_enabled_false(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    audio = tmp_path / "input.wav"
+    audio.write_bytes(b"\x00" * 16)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("preprocessing:\n  enabled: false\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    import preprocessing as prep_mod
+
+    calls: list[tuple] = []
+
+    def fake_preprocess(a, o, s):
+        calls.append((a, o, s))
+        return o
+
+    monkeypatch.setattr(prep_mod, "preprocess_audio", fake_preprocess)
+
+    result = runner.invoke(app, ["preprocess", str(audio)])
+
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1, "preprocess_audio must be called even when enabled=false"
+
+
+def test_preprocess_config_settings_reach_preprocess_audio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    audio = tmp_path / "input.wav"
+    audio.write_bytes(b"\x00" * 16)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        "preprocessing:\n  sample_rate: 22050\n  channels: 1\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    import preprocessing as prep_mod
+    from config import PreprocessingSettings
+
+    captured: list[PreprocessingSettings] = []
+
+    def fake_preprocess(a, o, s):
+        captured.append(s)
+        return o
+
+    monkeypatch.setattr(prep_mod, "preprocess_audio", fake_preprocess)
+
+    result = runner.invoke(app, ["preprocess", str(audio)])
+
+    assert result.exit_code == 0, result.output
+    assert captured[0].sample_rate == 22050
+    assert captured[0].channels == 1
+
+
+def test_preprocess_ffmpeg_error_exits_with_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    audio = tmp_path / "input.wav"
+    audio.write_bytes(b"\x00" * 16)
+
+    import preprocessing as prep_mod
+    from preprocessing import PreprocessingError
+
+    def fake_preprocess(a, o, s):
+        raise PreprocessingError("ffmpeg failed: codec not found")
+
+    monkeypatch.setattr(prep_mod, "preprocess_audio", fake_preprocess)
+
+    result = runner.invoke(app, ["preprocess", str(audio)])
+
+    assert result.exit_code == 1
+    assert "Preprocessing error" in result.output
+    assert "codec not found" in result.output
+
+
 def test_transcribe_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     audio = tmp_path / "rec.wav"
     audio.write_bytes(b"\x00" * 16)

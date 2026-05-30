@@ -90,6 +90,7 @@ def batch(
     """Process all audio files in a folder: transcribe and summarize each."""
     from config import PROVIDER_PRESETS, ConfigError, Settings  # noqa: PLC0415
     from formatters import to_json, to_telegram  # noqa: PLC0415
+    from preprocessing import prepared_audio  # noqa: PLC0415
     from providers.factory import make_summarizer, make_transcriber  # noqa: PLC0415
     from utils import write_text_atomic  # noqa: PLC0415
 
@@ -174,7 +175,8 @@ def batch(
         summary_ext = ".json" if output_format == "json" else ".txt"
         summary_path = out_dir / f"{audio_path.stem}_summary{summary_ext}"
         try:
-            tr = transcriber.transcribe(audio_path, lang)
+            with prepared_audio(audio_path, settings.preprocessing) as prepared:
+                tr = transcriber.transcribe(prepared, lang)
             write_text_atomic(transcript_path, tr.to_file_format())
             if tr.is_empty:
                 typer.echo("  No speech detected — summary skipped.", err=True)
@@ -195,6 +197,42 @@ def batch(
     typer.echo(f"\n{succeeded} succeeded, {len(failures)} failed.")
     if failures:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def preprocess(
+    audio: Annotated[Path | None, typer.Argument(file_okay=True, dir_okay=False, help="Audio file to preprocess")] = None,
+    output: Annotated[Path | None, typer.Option("-o", "--output", help="Output WAV file")] = None,
+    verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
+) -> None:
+    """Preprocess audio to a stable WAV format using ffmpeg."""
+    from config import ConfigError, Settings  # noqa: PLC0415
+
+    _configure_logging(verbose)
+    try:
+        settings = Settings.load()
+    except ConfigError as exc:
+        typer.echo(f"Configuration error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    audio_path = audio or settings.audio
+    if not audio_path.exists():
+        typer.echo(f"Error: audio file not found: {audio_path}", err=True)
+        raise typer.Exit(code=1)
+
+    output_path = output or audio_path.with_name(f"{audio_path.stem}.preprocessed.wav")
+    _ensure_output(output_path)
+    logger.info("Preprocessing: %s → %s", audio_path, output_path)
+
+    try:
+        from preprocessing import preprocess_audio  # noqa: PLC0415
+
+        preprocess_audio(audio_path, output_path, settings.preprocessing)
+    except Exception as exc:
+        typer.echo(f"Preprocessing error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Preprocessed audio saved to {output_path}")
 
 
 @app.command()
@@ -230,7 +268,10 @@ def transcribe(
         raise typer.Exit(code=1) from exc
 
     try:
-        transcript = transcriber.transcribe(audio_path, lang)
+        from preprocessing import prepared_audio  # noqa: PLC0415
+
+        with prepared_audio(audio_path, settings.preprocessing) as prepared:
+            transcript = transcriber.transcribe(prepared, lang)
     except Exception as exc:
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -395,7 +436,10 @@ def run(
         raise typer.Exit(code=1) from exc
 
     try:
-        tr = transcriber.transcribe(audio_path, language or settings.transcription.language)
+        from preprocessing import prepared_audio  # noqa: PLC0415
+
+        with prepared_audio(audio_path, settings.preprocessing) as prepared:
+            tr = transcriber.transcribe(prepared, language or settings.transcription.language)
     except Exception as exc:
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
