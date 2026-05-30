@@ -183,7 +183,9 @@ def test_summarize_cli_flags_override_config(
 ) -> None:
     """CLI -p and -m flags take priority over config.yaml values."""
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("provider: openai\nsummary_mode: detailed\nprivacy_ack: true\n", encoding="utf-8")
+    cfg.write_text(
+        "privacy_ack: true\nsummarization:\n  mode: detailed\n  model:\n    provider: openai\n", encoding="utf-8"
+    )
     monkeypatch.chdir(tmp_path)
 
     captured: dict[str, str] = {}
@@ -210,9 +212,9 @@ def test_summarize_env_overrides_config(
 ) -> None:
     """RECAP_* env vars take priority over config.yaml."""
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("provider: openai\nprivacy_ack: true\n", encoding="utf-8")
+    cfg.write_text("privacy_ack: true\nsummarization:\n  model:\n    provider: openai\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("RECAP_PROVIDER", "ollama")
+    monkeypatch.setenv("RECAP_SUMMARIZATION_MODEL_PROVIDER", "ollama")
 
     captured: dict[str, str] = {}
     import providers.factory as factory_mod
@@ -465,8 +467,8 @@ def test_config_transcription_language_passed_to_transcriber(
     audio_file: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """transcription_language from config.yaml reaches the transcriber."""
-    (tmp_path / "config.yaml").write_text("transcription_language: en\n", encoding="utf-8")
+    """transcription.language from config.yaml reaches the transcriber."""
+    (tmp_path / "config.yaml").write_text("transcription:\n  language: en\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     captured: dict[str, str] = {}
@@ -497,28 +499,21 @@ def test_config_transcription_language_passed_to_transcriber(
     assert captured["language"] == "en"
 
 
-def test_config_deprecated_language_alias_remapped(
+def test_config_legacy_flat_key_rejected(
     tmp_path: Path,
     transcript_file: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Old 'language' key in config.yaml is remapped to transcription_language with a warning."""
+    """Old flat 'language' key in config.yaml is rejected with a generic error."""
     (tmp_path / "config.yaml").write_text("language: en\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    captured: dict = {}
-    import providers.factory as factory_mod
-
-    def spy(settings, provider, mode, model_override=None, summary_language=None):
-        captured["settings"] = settings
-        return FakeSummarizer()
-
-    monkeypatch.setattr(factory_mod, "make_summarizer", spy)
-
     result = runner.invoke(app, ["summarize", str(transcript_file), "-p", "ollama"])
 
-    assert result.exit_code == 0, result.stdout + result.stderr
-    assert captured["settings"].transcription_language == "en"
+    assert result.exit_code == 1
+    combined = result.stdout + result.stderr
+    assert "Configuration error" in combined
+    assert "Unknown config key: 'language'" in combined
 
 
 def test_config_summary_language_flows_to_make_summarizer(
@@ -526,15 +521,15 @@ def test_config_summary_language_flows_to_make_summarizer(
     transcript_file: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """summary_language from config.yaml is forwarded to make_summarizer."""
-    (tmp_path / "config.yaml").write_text("summary_language: ru\n", encoding="utf-8")
+    """summarization.language from config.yaml is forwarded to make_summarizer."""
+    (tmp_path / "config.yaml").write_text("summarization:\n  language: ru\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     captured: dict = {}
     import providers.factory as factory_mod
 
     def spy(settings, provider, mode, model_override=None, summary_language=None):
-        captured["settings_lang"] = settings.summary_language
+        captured["settings_lang"] = settings.summarization.language
         return FakeSummarizer()
 
     monkeypatch.setattr(factory_mod, "make_summarizer", spy)
@@ -551,14 +546,16 @@ def test_config_base_url_loaded_into_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """base_url from config.yaml is available in Settings when factory is called."""
-    (tmp_path / "config.yaml").write_text("base_url: http://my-llm:9000/v1\nprivacy_ack: true\n", encoding="utf-8")
+    (tmp_path / "config.yaml").write_text(
+        "privacy_ack: true\nsummarization:\n  model:\n    base_url: http://my-llm:9000/v1\n", encoding="utf-8"
+    )
     monkeypatch.chdir(tmp_path)
 
     captured: dict = {}
     import providers.factory as factory_mod
 
     def spy(settings, provider, mode, model_override=None, summary_language=None):
-        captured["base_url"] = settings.base_url
+        captured["base_url"] = settings.summarization.model.base_url
         return FakeSummarizer()
 
     monkeypatch.setattr(factory_mod, "make_summarizer", spy)
@@ -574,8 +571,8 @@ def test_config_model_overridden_by_cli(
     transcript_file: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """--model CLI flag overrides the model field from config.yaml."""
-    (tmp_path / "config.yaml").write_text("model: qwen3:latest\n", encoding="utf-8")
+    """--model CLI flag overrides the model name field from config.yaml."""
+    (tmp_path / "config.yaml").write_text("summarization:\n  model:\n    name: qwen3:latest\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     captured: dict = {}

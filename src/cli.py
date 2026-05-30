@@ -76,13 +76,13 @@ def batch(
     mode: Annotated[str | None, typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
     model: Annotated[str | None, typer.Option("--model", help="Model name (overrides config)")] = None,
     provider: Annotated[
-        str | None, typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")
+        str | None, typer.Option("-p", "--provider", help="Provider: openai | xai | ollama | lm-studio | vllm")
     ] = None,
     language: Annotated[
         str | None, typer.Option("-l", "--language", help="Transcription language code (ru, en, …)")
     ] = None,
     summary_language: Annotated[
-        str | None, typer.Option("--summary-language", help="Summary language (ru). Defaults to --language.")
+        str | None, typer.Option("--summary-language", help="Summary language (ru). Defaults to ru.")
     ] = None,
     output_format: Annotated[str, typer.Option("-f", "--format", help="Output format: telegram | json")] = "telegram",
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
@@ -104,9 +104,9 @@ def batch(
         typer.echo(f"Error: folder not found: {folder}", err=True)
         raise typer.Exit(code=1)
 
-    provider_name = provider or settings.provider
-    mode_name = mode or settings.summary_mode
-    lang = language or settings.transcription_language
+    provider_name = provider or settings.summarization.model.provider
+    mode_name = mode or settings.summarization.mode
+    lang = language or settings.transcription.language
     out_dir = output_dir or folder
 
     if output_format not in ("telegram", "json"):
@@ -143,7 +143,9 @@ def batch(
         typer.echo(f"Error creating output directory {out_dir}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
+    _warn_if_external(
+        settings.summarization.model.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack
+    )
 
     try:
         transcriber = make_transcriber(settings)
@@ -204,7 +206,7 @@ def transcribe(
         typer.echo(f"Error: audio file not found: {audio_path}", err=True)
         raise typer.Exit(code=1)
     output_path = output or settings.transcript
-    lang = language or settings.transcription_language
+    lang = language or settings.transcription.language
     _ensure_output(output_path)
     logger.info("Transcribing: %s", audio_path)
     try:
@@ -235,11 +237,11 @@ def summarize(
     mode: Annotated[str | None, typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
     model: Annotated[str | None, typer.Option("--model", help="Model name (overrides config)")] = None,
     provider: Annotated[
-        str | None, typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")
+        str | None, typer.Option("-p", "--provider", help="Provider: openai | xai | ollama | lm-studio | vllm")
     ] = None,
     summary_language: Annotated[
         str | None,
-        typer.Option("--summary-language", help="Summary language (ru). Defaults to transcription_language."),
+        typer.Option("--summary-language", help="Summary language (ru). Defaults to ru."),
     ] = None,
     output_format: Annotated[str, typer.Option("-f", "--format", help="Output format: telegram | json")] = "telegram",
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
@@ -258,8 +260,8 @@ def summarize(
         typer.echo(f"Error: transcript file not found: {transcript_path}", err=True)
         raise typer.Exit(code=1)
     output_path = output or settings.summary
-    provider_name = provider or settings.provider
-    mode_name = mode or settings.summary_mode
+    provider_name = provider or settings.summarization.model.provider
+    mode_name = mode or settings.summarization.mode
 
     if output_format not in ("telegram", "json"):
         typer.echo(f"Unknown format: {output_format!r}. Available: telegram, json", err=True)
@@ -289,7 +291,9 @@ def summarize(
         typer.echo("Error: no speech detected in transcript.", err=True)
         raise typer.Exit(code=1)
 
-    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
+    _warn_if_external(
+        settings.summarization.model.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack
+    )
 
     try:
         raw = summarizer.summarize(tr.to_text())
@@ -316,7 +320,7 @@ def run(
         str | None, typer.Option("-l", "--language", help="Transcription language code (ru, en, …)")
     ] = None,
     summary_language: Annotated[
-        str | None, typer.Option("--summary-language", help="Summary language (ru). Defaults to --language.")
+        str | None, typer.Option("--summary-language", help="Summary language (ru). Defaults to ru.")
     ] = None,
     mode: Annotated[str | None, typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
     model: Annotated[str | None, typer.Option("--model", help="Model name (overrides config)")] = None,
@@ -343,8 +347,8 @@ def run(
 
     transcript_path = transcript or settings.transcript
     summary_path = summary or settings.summary
-    provider_name = provider or settings.provider
-    mode_name = mode or settings.summary_mode
+    provider_name = provider or settings.summarization.model.provider
+    mode_name = mode or settings.summarization.mode
 
     if output_format not in ("telegram", "json"):
         typer.echo(f"Unknown format: {output_format!r}. Available: telegram, json", err=True)
@@ -368,7 +372,7 @@ def run(
         raise typer.Exit(code=1) from exc
 
     try:
-        tr = transcriber.transcribe(audio_path, language or settings.transcription_language)
+        tr = transcriber.transcribe(audio_path, language or settings.transcription.language)
     except Exception as exc:
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -380,7 +384,9 @@ def run(
         typer.echo("No speech detected in transcript — summary skipped.", err=True)
         raise typer.Exit(code=1)
 
-    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
+    _warn_if_external(
+        settings.summarization.model.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack
+    )
 
     try:
         raw = summarizer.summarize(tr.to_text())

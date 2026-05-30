@@ -31,59 +31,71 @@ cp config.yaml.example config.yaml
 
 ### config.yaml
 
+Конфигурация — **вложенная**: две секции `transcription` и `summarization`, в каждой подсекция `model`.
+
 ```yaml
-provider: ollama          # openai | ollama | lm-studio | vllm
-model: qwen3.5:latest
-transcription_language: ru   # язык для Whisper
-# summary_language: ru       # язык промптов LLM (по умолчанию ru)
-whisper_model: large-v3
-max_transcript_chars: 60000   # лимит одного LLM-запроса; длинные транскрипты разбиваются на чанки (chunking_mode: chunk)
-# api_key: sk-...
-# base_url: http://...
+transcription:
+  language: ru                 # язык для Whisper
+  model:
+    provider: faster-whisper   # поддерживается только faster-whisper
+    name: large-v3
+summarization:
+  # language: ru               # язык промптов LLM; по умолчанию ru
+  mode: medium                 # brief | medium | detailed
+  max_transcript_chars: 60000  # лимит одного LLM-запроса; длинные транскрипты разбиваются на чанки (chunking_mode: chunk)
+  model:
+    provider: ollama           # openai | xai | ollama | lm-studio | vllm
+    name: qwen3.5:latest
+    # api_key: sk-...
+    # base_url: http://...
 ```
 
 `config.yaml` не коммитится (в `.gitignore`). Полный список полей — в `config.yaml.example`.
 
+> **Без обратной совместимости:** старые плоские ключи (`provider`, `model`, `whisper_model`, `summary_mode`, …) больше не поддерживаются — загрузка падает с ошибкой о неизвестном ключе.
+
 ### Настройки Whisper
+
+Все поля — внутри `transcription.model`:
 
 | Поле | Умолчание | Описание |
 |---|---|---|
-| `whisper_device` | `cuda` | `cuda` / `cpu` / `auto` |
-| `whisper_compute_type` | `default` | `default` / `float16` / `int8` / `int8_float16` / `float32` |
-| `whisper_beam_size` | `5` | Размер луча — точность vs скорость |
-| `whisper_vad_filter` | `true` | Пропускать тихие участки |
-| `whisper_condition_on_previous_text` | `true` | Улучшает связность, отключить для коротких клипов |
+| `transcription.model.device` | `cuda` | `cuda` / `cpu` / `auto` |
+| `transcription.model.compute_type` | `default` | `default` / `float16` / `int8` / `int8_float16` / `float32` |
+| `transcription.model.beam_size` | `5` | Размер луча — точность vs скорость |
+| `transcription.model.vad_filter` | `true` | Пропускать тихие участки |
+| `transcription.model.condition_on_previous_text` | `true` | Улучшает связность, отключить для коротких клипов |
 
-`whisper_compute_type: default` автоматически выбирает `float16` для CUDA и `int8` для CPU/auto.
+`compute_type: default` автоматически выбирает `float16` для CUDA и `int8` для CPU/auto.
 
 **CPU (без GPU):**
 ```yaml
-whisper_device: cpu
-# compute_type подбирается автоматически (int8)
-```
-
-**Авто-определение (GPU если доступен, иначе CPU):**
-```yaml
-whisper_device: auto
-# compute_type подбирается автоматически (int8)
+transcription:
+  model:
+    device: cpu
+    # compute_type подбирается автоматически (int8)
 ```
 
 **Явные настройки GPU:**
 ```yaml
-whisper_device: cuda
-whisper_compute_type: float16   # быстро и точно
-whisper_beam_size: 1            # ещё быстрее, чуть менее точно
+transcription:
+  model:
+    device: cuda
+    compute_type: float16   # быстро и точно
+    beam_size: 1            # ещё быстрее, чуть менее точно
 ```
 
 ### Переменные среды
 
-Переопределяют любое поле из `config.yaml`:
+Переопределяют любое поле из `config.yaml`. Имена повторяют вложенный путь:
 
 ```bash
-RECAP_PROVIDER=openai
-RECAP_MODEL=gpt-4o-mini
-RECAP_API_KEY=sk-...        # или стандартный OPENAI_API_KEY
-RECAP_MAX_TRANSCRIPT_CHARS=30000
+RECAP_SUMMARIZATION_MODEL_PROVIDER=openai
+RECAP_SUMMARIZATION_MODEL_NAME=gpt-4o-mini
+RECAP_SUMMARIZATION_MODEL_API_KEY=sk-...
+RECAP_SUMMARIZATION_MAX_TRANSCRIPT_CHARS=30000
+RECAP_TRANSCRIPTION_LANGUAGE=en
+RECAP_TRANSCRIPTION_MODEL_DEVICE=cpu
 ```
 
 ### Провайдеры
@@ -91,6 +103,7 @@ RECAP_MAX_TRANSCRIPT_CHARS=30000
 | Провайдер | base_url (по умолчанию) |
 |---|---|
 | `openai` | api.openai.com |
+| `xai` | https://api.x.ai/v1 |
 | `ollama` | http://localhost:11434/v1 |
 | `lm-studio` | http://localhost:1234/v1 |
 | `vllm` | http://localhost:8000/v1 |
@@ -99,29 +112,54 @@ RECAP_MAX_TRANSCRIPT_CHARS=30000
 
 **OpenAI:**
 ```yaml
-provider: openai
-model: gpt-4o-mini
-api_key: sk-...
+summarization:
+  model:
+    provider: openai
+    name: gpt-4o-mini
+    api_key: sk-...
 ```
 
 **Ollama:**
 ```yaml
-provider: ollama
-model: qwen3.5:latest
+summarization:
+  model:
+    provider: ollama
+    name: qwen3.5:latest
+```
+
+**xAI:**
+```yaml
+summarization:
+  model:
+    provider: xai
+    name: grok-4
+    api_key: xai-...
 ```
 
 **LM Studio:**
 ```yaml
-provider: lm-studio
-model: local-model
+summarization:
+  model:
+    provider: lm-studio
+    name: local-model
+```
+
+**vLLM:**
+```yaml
+summarization:
+  model:
+    provider: vllm
+    name: Qwen/Qwen3-8B
 ```
 
 **Кастомный endpoint:**
 ```yaml
-provider: openai
-model: my-model
-base_url: http://my-server:9000/v1
-api_key: secret
+summarization:
+  model:
+    provider: openai
+    name: my-model
+    base_url: http://my-server:9000/v1
+    api_key: secret
 ```
 
 ## Использование
@@ -220,7 +258,7 @@ uv run recap run audio.wav -f json > summary.json
 | Провайдер | Данные |
 |---|---|
 | `ollama`, `lm-studio`, `vllm` | Остаются локально — не покидают машину |
-| `openai` или внешний `base_url` | Отправляются на внешний сервер |
+| `openai`, `xai` или внешний `base_url` | Отправляются на внешний сервер |
 
 При использовании внешнего endpoint CLI выводит предупреждение в stderr. Чтобы его отключить, добавьте в `config.yaml`:
 
@@ -229,6 +267,8 @@ privacy_ack: true
 ```
 
 Или через переменную среды: `RECAP_PRIVACY_ACK=true`.
+
+> **Breaking change:** схема `config.yaml` стала вложенной (`transcription` / `summarization`, в каждой — `model`). Старые плоские ключи и старые плоские `RECAP_*` переменные не поддерживаются. API-ключ задаётся только через `summarization.model.api_key` или `RECAP_SUMMARIZATION_MODEL_API_KEY` — неявного fallback на `OPENAI_API_KEY` больше нет.
 
 ## Разработка
 
