@@ -79,7 +79,13 @@ class WhisperTranscriber:
 
     def transcribe(self, audio: Path, language: str = "ru") -> Transcript:
         from rich.console import Console  # noqa: PLC0415
-        from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn  # noqa: PLC0415
+        from rich.progress import (  # noqa: PLC0415
+            BarColumn,
+            Progress,
+            TaskProgressColumn,
+            TextColumn,
+            TimeElapsedColumn,
+        )
 
         logger.info("Transcribing %s…", audio)
         segments_iter, info = self._model.transcribe(

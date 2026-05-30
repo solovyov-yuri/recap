@@ -1,61 +1,73 @@
-import os
 from pathlib import Path
 
 import pytest
 
-from config import ConfigError, Settings
+from config import (
+    ConfigError,
+    Settings,
+    SummarizationModelSettings,
+    SummarizationSettings,
+    TranscriptionModelSettings,
+    TranscriptionSettings,
+)
+
+# ── Defaults ────────────────────────────────────────────────────────────────────
 
 
-def test_defaults() -> None:
+def test_defaults_produce_nested_settings() -> None:
     s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.language == "ru"
-    assert s.provider == "ollama"
-    assert s.api_key is None
+    assert isinstance(s.transcription, TranscriptionSettings)
+    assert isinstance(s.transcription.model, TranscriptionModelSettings)
+    assert isinstance(s.summarization, SummarizationSettings)
+    assert isinstance(s.summarization.model, SummarizationModelSettings)
+
+    assert s.transcription.language == "ru"
+    assert s.transcription.model.provider == "faster-whisper"
+    assert s.transcription.model.name == "large-v3"
+    assert s.summarization.language is None
+    assert s.summarization.mode == "medium"
+    assert s.summarization.max_transcript_chars == 60_000
+    assert s.summarization.model.provider == "ollama"
+    assert s.summarization.model.name == "qwen3.5:latest"
+    assert s.summarization.model.api_key is None
+    assert s.privacy_ack is False
 
 
-def test_env_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RECAP_MODEL", "gpt-4o")
-    monkeypatch.setenv("RECAP_LANGUAGE", "en")
+def test_settings_is_immutable() -> None:
     s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.model == "gpt-4o"
-    assert s.language == "en"
+    with pytest.raises(AttributeError):
+        s.privacy_ack = True  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        s.summarization.model.provider = "openai"  # type: ignore[misc]
 
 
-def test_openai_api_key_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.delenv("RECAP_API_KEY", raising=False)
-    s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.api_key == "sk-test"
+# ── Nested YAML loading ─────────────────────────────────────────────────────────
 
 
-def test_meeting_sum_api_key_takes_priority(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-    monkeypatch.setenv("RECAP_API_KEY", "sk-custom")
-    s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.api_key == "sk-custom"
-
-
-def test_yaml_overrides_defaults(tmp_path: Path) -> None:
+def test_nested_yaml_loads(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("language: en\nmodel: mistral\n", encoding="utf-8")
+    cfg.write_text(
+        "transcription:\n"
+        "  language: en\n"
+        "  model:\n"
+        "    name: medium\n"
+        "    device: cpu\n"
+        "summarization:\n"
+        "  mode: brief\n"
+        "  max_transcript_chars: 30000\n"
+        "  model:\n"
+        "    provider: openai\n"
+        "    name: gpt-4o\n",
+        encoding="utf-8",
+    )
     s = Settings.load(config_path=cfg)
-    assert s.language == "en"
-    assert s.model == "mistral"
-
-
-def test_env_overrides_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = tmp_path / "config.yaml"
-    cfg.write_text("model: from-yaml\n", encoding="utf-8")
-    monkeypatch.setenv("RECAP_MODEL", "from-env")
-    s = Settings.load(config_path=cfg)
-    assert s.model == "from-env"
-
-
-def test_unknown_yaml_key_ignored(tmp_path: Path) -> None:
-    cfg = tmp_path / "config.yaml"
-    cfg.write_text("unknown_key: value\nlanguage: en\n", encoding="utf-8")
-    s = Settings.load(config_path=cfg)
-    assert s.language == "en"
+    assert s.transcription.language == "en"
+    assert s.transcription.model.name == "medium"
+    assert s.transcription.model.device == "cpu"
+    assert s.summarization.mode == "brief"
+    assert s.summarization.max_transcript_chars == 30000
+    assert s.summarization.model.provider == "openai"
+    assert s.summarization.model.name == "gpt-4o"
 
 
 def test_path_fields_converted(tmp_path: Path) -> None:
@@ -66,15 +78,125 @@ def test_path_fields_converted(tmp_path: Path) -> None:
     assert s.audio == Path("custom/meeting.wav")
 
 
-def test_summary_mode_default() -> None:
-    s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.summary_mode == "medium"
+def test_partial_nested_section_uses_defaults(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summarization:\n  mode: brief\n", encoding="utf-8")
+    s = Settings.load(config_path=cfg)
+    assert s.summarization.mode == "brief"
+    # untouched nested fields keep their defaults
+    assert s.summarization.model.provider == "ollama"
+    assert s.transcription.model.name == "large-v3"
 
 
-def test_summary_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RECAP_SUMMARY_MODE", "brief")
+# ── Env var overrides ───────────────────────────────────────────────────────────
+
+
+def test_env_overrides_nested_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_SUMMARIZATION_MODEL_NAME", "gpt-4o")
+    monkeypatch.setenv("RECAP_TRANSCRIPTION_LANGUAGE", "en")
     s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.summary_mode == "brief"
+    assert s.summarization.model.name == "gpt-4o"
+    assert s.transcription.language == "en"
+
+
+def test_env_overrides_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summarization:\n  model:\n    name: from-yaml\n", encoding="utf-8")
+    monkeypatch.setenv("RECAP_SUMMARIZATION_MODEL_NAME", "from-env")
+    s = Settings.load(config_path=cfg)
+    assert s.summarization.model.name == "from-env"
+
+
+def test_env_transcription_model_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_TRANSCRIPTION_MODEL_NAME", "small")
+    monkeypatch.setenv("RECAP_TRANSCRIPTION_MODEL_DEVICE", "cpu")
+    monkeypatch.setenv("RECAP_TRANSCRIPTION_MODEL_BEAM_SIZE", "3")
+    monkeypatch.setenv("RECAP_TRANSCRIPTION_MODEL_VAD_FILTER", "false")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.transcription.model.name == "small"
+    assert s.transcription.model.device == "cpu"
+    assert s.transcription.model.beam_size == 3
+    assert s.transcription.model.vad_filter is False
+
+
+def test_env_summarization_tuning_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_SUMMARIZATION_TIMEOUT_SECONDS", "120")
+    monkeypatch.setenv("RECAP_SUMMARIZATION_RETRIES", "0")
+    monkeypatch.setenv("RECAP_SUMMARIZATION_CHUNKING_MODE", "truncate")
+    monkeypatch.setenv("RECAP_SUMMARIZATION_MAX_TRANSCRIPT_CHARS", "30000")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.summarization.timeout_seconds == 120.0
+    assert s.summarization.retries == 0
+    assert s.summarization.chunking_mode == "truncate"
+    assert s.summarization.max_transcript_chars == 30000
+
+
+def test_privacy_ack_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_PRIVACY_ACK", "true")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.privacy_ack is True
+
+
+# ── API key ─────────────────────────────────────────────────────────────────────
+
+
+def test_openai_api_key_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    # No implicit OPENAI_API_KEY fallback: the key is set only via
+    # summarization.model.api_key (config) or RECAP_SUMMARIZATION_MODEL_API_KEY.
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("RECAP_SUMMARIZATION_MODEL_API_KEY", raising=False)
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.summarization.model.api_key is None
+
+
+def test_recap_api_key_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_SUMMARIZATION_MODEL_API_KEY", "sk-custom")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.summarization.model.api_key == "sk-custom"
+
+
+# ── Unknown / legacy keys hard-fail ─────────────────────────────────────────────
+
+
+def test_unknown_top_level_key_fails(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("bogus: value\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="Unknown config key: 'bogus'"):
+        Settings.load(config_path=cfg)
+
+
+def test_unknown_nested_key_fails(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summarization:\n  model:\n    bogus: value\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="summarization.model.bogus"):
+        Settings.load(config_path=cfg)
+
+
+@pytest.mark.parametrize(
+    "old_key",
+    [
+        "provider",
+        "model",
+        "whisper_model",
+        "summary_mode",
+        "max_transcript_chars",
+        "transcription_language",
+        "language",
+        "summary_language",
+        "llm_timeout_seconds",
+        "chunking_mode",
+    ],
+)
+def test_legacy_flat_key_rejected(tmp_path: Path, old_key: str) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(f"{old_key}: somevalue\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match=rf"Unknown config key: '{old_key}'") as exc:
+        Settings.load(config_path=cfg)
+    # Generic failure: no per-key migration hint.
+    assert "instead" not in str(exc.value)
+
+
+# ── Malformed YAML ──────────────────────────────────────────────────────────────
 
 
 def test_malformed_yaml(tmp_path: Path) -> None:
@@ -91,133 +213,152 @@ def test_invalid_yaml_not_a_dict(tmp_path: Path) -> None:
         Settings.load(config_path=cfg)
 
 
-def test_invalid_provider(tmp_path: Path) -> None:
+def test_nested_section_not_a_mapping(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("provider: grok\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="provider"):
+    cfg.write_text("summarization: just-a-string\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="'summarization' must be a mapping"):
         Settings.load(config_path=cfg)
 
 
-def test_invalid_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RECAP_PROVIDER", "bad-provider")
-    with pytest.raises(ConfigError, match="provider"):
+# ── Value validation ────────────────────────────────────────────────────────────
+
+
+def test_invalid_summarization_provider(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summarization:\n  model:\n    provider: grok\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="summarization.model.provider"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_summarization_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_SUMMARIZATION_MODEL_PROVIDER", "bad-provider")
+    with pytest.raises(ConfigError, match="summarization.model.provider"):
         Settings.load(config_path=Path("nonexistent.yaml"))
+
+
+def test_xai_summarization_provider_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_SUMMARIZATION_MODEL_PROVIDER", "xai")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.summarization.model.provider == "xai"
+
+
+def test_invalid_transcription_provider(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("transcription:\n  model:\n    provider: whisper-cpp\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="transcription.model.provider"):
+        Settings.load(config_path=cfg)
 
 
 def test_invalid_summary_mode(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("summary_mode: ultra\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="summary_mode"):
+    cfg.write_text("summarization:\n  mode: ultra\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="summarization.mode"):
         Settings.load(config_path=cfg)
 
 
 def test_invalid_max_transcript_chars_not_a_number(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("max_transcript_chars: abc\n", encoding="utf-8")
+    cfg.write_text("summarization:\n  max_transcript_chars: abc\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="max_transcript_chars"):
         Settings.load(config_path=cfg)
 
 
 def test_invalid_max_transcript_chars_zero(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("max_transcript_chars: 0\n", encoding="utf-8")
+    cfg.write_text("summarization:\n  max_transcript_chars: 0\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="max_transcript_chars"):
         Settings.load(config_path=cfg)
 
 
-def test_invalid_max_transcript_chars_negative(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RECAP_MAX_TRANSCRIPT_CHARS", "-500")
+def test_invalid_max_transcript_chars_negative_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_SUMMARIZATION_MAX_TRANSCRIPT_CHARS", "-500")
     with pytest.raises(ConfigError, match="max_transcript_chars"):
         Settings.load(config_path=Path("nonexistent.yaml"))
 
 
-def test_invalid_llm_timeout_not_a_number(tmp_path: Path) -> None:
+def test_invalid_timeout_not_a_number(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("llm_timeout_seconds: abc\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="llm_timeout_seconds"):
+    cfg.write_text("summarization:\n  timeout_seconds: abc\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="timeout_seconds"):
         Settings.load(config_path=cfg)
 
 
-def test_invalid_llm_timeout_zero(tmp_path: Path) -> None:
+def test_invalid_timeout_zero(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("llm_timeout_seconds: 0\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="llm_timeout_seconds"):
+    cfg.write_text("summarization:\n  timeout_seconds: 0\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="timeout_seconds"):
         Settings.load(config_path=cfg)
 
 
-def test_invalid_llm_retries_not_a_number(tmp_path: Path) -> None:
+def test_invalid_retries_not_a_number(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("llm_retries: abc\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="llm_retries"):
+    cfg.write_text("summarization:\n  retries: abc\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="retries"):
         Settings.load(config_path=cfg)
 
 
-def test_invalid_llm_retries_negative(tmp_path: Path) -> None:
+def test_invalid_retries_negative(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("llm_retries: -1\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="llm_retries"):
+    cfg.write_text("summarization:\n  retries: -1\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="retries"):
         Settings.load(config_path=cfg)
-
-
-def test_llm_timeout_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RECAP_LLM_TIMEOUT", "120")
-    s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.llm_timeout_seconds == 120.0
-
-
-def test_llm_retries_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RECAP_LLM_RETRIES", "0")
-    s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.llm_retries == 0
 
 
 def test_invalid_whisper_device(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("whisper_device: gpu\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="whisper_device"):
+    cfg.write_text("transcription:\n  model:\n    device: gpu\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="transcription.model.device"):
         Settings.load(config_path=cfg)
 
 
 def test_invalid_whisper_compute_type(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("whisper_compute_type: bfloat16\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="whisper_compute_type"):
+    cfg.write_text("transcription:\n  model:\n    compute_type: bfloat16\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="transcription.model.compute_type"):
         Settings.load(config_path=cfg)
 
 
-def test_invalid_whisper_beam_size_not_a_number(tmp_path: Path) -> None:
+def test_invalid_beam_size_not_a_number(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("whisper_beam_size: fast\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="whisper_beam_size"):
+    cfg.write_text("transcription:\n  model:\n    beam_size: fast\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="beam_size"):
         Settings.load(config_path=cfg)
 
 
-def test_invalid_whisper_beam_size_zero(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RECAP_WHISPER_BEAM_SIZE", "0")
-    with pytest.raises(ConfigError, match="whisper_beam_size"):
+def test_invalid_beam_size_zero_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_TRANSCRIPTION_MODEL_BEAM_SIZE", "0")
+    with pytest.raises(ConfigError, match="beam_size"):
         Settings.load(config_path=Path("nonexistent.yaml"))
-
-
-def test_whisper_device_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RECAP_WHISPER_DEVICE", "cpu")
-    s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.whisper_device == "cpu"
-
-
-def test_whisper_vad_filter_bool_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RECAP_WHISPER_VAD_FILTER", "false")
-    s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.whisper_vad_filter is False
 
 
 def test_invalid_chunking_mode(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("chunking_mode: stream\n", encoding="utf-8")
+    cfg.write_text("summarization:\n  chunking_mode: stream\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="chunking_mode"):
         Settings.load(config_path=cfg)
 
 
 def test_chunking_mode_truncate_valid(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RECAP_CHUNKING_MODE", "truncate")
+    monkeypatch.setenv("RECAP_SUMMARIZATION_CHUNKING_MODE", "truncate")
     s = Settings.load(config_path=Path("nonexistent.yaml"))
-    assert s.chunking_mode == "truncate"
+    assert s.summarization.chunking_mode == "truncate"
+
+
+def test_summary_language_yaml(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summarization:\n  language: ru\n", encoding="utf-8")
+    s = Settings.load(config_path=cfg)
+    assert s.summarization.language == "ru"
+
+
+def test_invalid_summary_language(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summarization:\n  language: en\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="summarization.language"):
+        Settings.load(config_path=cfg)
+
+
+def test_invalid_summary_language_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_SUMMARIZATION_LANGUAGE", "fr")
+    with pytest.raises(ConfigError, match="summarization.language"):
+        Settings.load(config_path=Path("nonexistent.yaml"))

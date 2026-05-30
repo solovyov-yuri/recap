@@ -49,10 +49,12 @@ def test_from_file_empty_lines_ignored(tmp_path: Path) -> None:
 
 
 def test_to_text_strips_timestamps() -> None:
-    tr = Transcript(segments=(
-        Segment(0.85, 5.22, "Привет"),
-        Segment(5.22, 7.50, "Пока"),
-    ))
+    tr = Transcript(
+        segments=(
+            Segment(0.85, 5.22, "Привет"),
+            Segment(5.22, 7.50, "Пока"),
+        )
+    )
     text = tr.to_text()
     assert "0.85" not in text
     assert "5.22" not in text
@@ -60,10 +62,12 @@ def test_to_text_strips_timestamps() -> None:
 
 
 def test_to_text_skips_empty_segments() -> None:
-    tr = Transcript(segments=(
-        Segment(0.0, 0.0, ""),
-        Segment(1.0, 2.0, "Текст"),
-    ))
+    tr = Transcript(
+        segments=(
+            Segment(0.0, 0.0, ""),
+            Segment(1.0, 2.0, "Текст"),
+        )
+    )
     assert tr.to_text() == "Текст"
 
 

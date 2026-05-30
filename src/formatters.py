@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from models import MeetingSummary
 
 # Output format: Telegram Markdown v1 (parse_mode="Markdown").
 # Supported: *bold*, _italic_, `code`, [text](url).
@@ -28,3 +32,14 @@ def to_plain(text: str) -> str:
     """Strip think tags, otherwise pass through."""
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     return text.strip()
+
+
+def to_json(summary: MeetingSummary) -> str:
+    """Serialize a MeetingSummary to a pretty-printed JSON string."""
+    import json  # noqa: PLC0415
+
+    return json.dumps(
+        {"mode": summary.mode, "summary": to_plain(summary.raw)},
+        ensure_ascii=False,
+        indent=2,
+    )

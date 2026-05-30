@@ -61,7 +61,7 @@ def test_summarize_unknown_mode(tmp_path: Path) -> None:
 
 def test_help_does_not_load_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("provider: bad-provider\n", encoding="utf-8")
+    cfg.write_text("summarization:\n  model:\n    provider: bad-provider\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["summarize", "--help"])
     assert result.exit_code == 0
@@ -69,7 +69,7 @@ def test_help_does_not_load_config(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
 def test_config_error_propagates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("provider: bad-provider\n", encoding="utf-8")
+    cfg.write_text("summarization:\n  model:\n    provider: bad-provider\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["summarize", str(tmp_path / "t.txt")])
     assert result.exit_code == 1
@@ -97,11 +97,17 @@ def test_run_saves_transcript_before_llm_failure(tmp_path: Path, monkeypatch: py
 
     monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", bad_summarize)
 
-    result = runner.invoke(app, [
-        "run", str(audio),
-        "--transcript", str(transcript_file),
-        "--summary", str(summary_file),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(audio),
+            "--transcript",
+            str(transcript_file),
+            "--summary",
+            str(summary_file),
+        ],
+    )
 
     assert result.exit_code == 1
     assert "LLM error" in result.output
@@ -159,9 +165,9 @@ def test_run_empty_transcription_saves_transcript_and_exits(tmp_path: Path, monk
     transcript_file = tmp_path / "out.txt"
     summary_file = tmp_path / "summary.txt"
 
-    from transcript import Transcript
     import providers.llm as llm_mod
     import providers.whisper as whisper_mod
+    from transcript import Transcript
 
     empty_tr = Transcript(segments=())
     monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, **kwargs: None)
@@ -175,11 +181,17 @@ def test_run_empty_transcription_saves_transcript_and_exits(tmp_path: Path, monk
 
     monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", should_not_be_called)
 
-    result = runner.invoke(app, [
-        "run", str(audio),
-        "--transcript", str(transcript_file),
-        "--summary", str(summary_file),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(audio),
+            "--transcript",
+            str(transcript_file),
+            "--summary",
+            str(summary_file),
+        ],
+    )
 
     assert result.exit_code == 1
     assert "no speech" in result.output.lower()
@@ -223,9 +235,9 @@ def test_batch_output_naming(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     (tmp_path / "meeting.wav").write_bytes(b"\x00" * 16)
     (tmp_path / "call.mp3").write_bytes(b"\x00" * 16)
 
-    from transcript import Segment, Transcript
     import providers.llm as llm_mod
     import providers.whisper as whisper_mod
+    from transcript import Segment, Transcript
 
     fake_tr = Transcript(segments=(Segment(start=0.0, end=1.0, text="hello"),))
     monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, **kwargs: None)
@@ -248,9 +260,9 @@ def test_batch_output_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     (audio_dir / "rec.wav").write_bytes(b"\x00" * 16)
     out_dir = tmp_path / "out"
 
-    from transcript import Segment, Transcript
     import providers.llm as llm_mod
     import providers.whisper as whisper_mod
+    from transcript import Segment, Transcript
 
     fake_tr = Transcript(segments=(Segment(start=0.0, end=1.0, text="hello"),))
     monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, **kwargs: None)
@@ -268,9 +280,9 @@ def test_batch_partial_failure_continues(tmp_path: Path, monkeypatch: pytest.Mon
     (tmp_path / "good.wav").write_bytes(b"\x00" * 16)
     (tmp_path / "bad.wav").write_bytes(b"\x00" * 16)
 
-    from transcript import Segment, Transcript
     import providers.llm as llm_mod
     import providers.whisper as whisper_mod
+    from transcript import Segment, Transcript
 
     good_tr = Transcript(segments=(Segment(start=0.0, end=1.0, text="hello"),))
 
@@ -306,9 +318,9 @@ def test_batch_stem_collision_exits(tmp_path: Path) -> None:
 def test_batch_empty_transcript_skips_llm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / "silent.wav").write_bytes(b"\x00" * 16)
 
-    from transcript import Transcript
     import providers.llm as llm_mod
     import providers.whisper as whisper_mod
+    from transcript import Transcript
 
     empty_tr = Transcript(segments=())
     monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, **kwargs: None)
@@ -331,6 +343,49 @@ def test_batch_empty_transcript_skips_llm(tmp_path: Path, monkeypatch: pytest.Mo
     assert "1 succeeded, 0 failed" in result.output
 
 
+def test_summarize_format_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello world\n", encoding="utf-8")
+    out = tmp_path / "out.txt"
+
+    import providers.llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", lambda self, text: "summary text")
+    result = runner.invoke(app, ["summarize", str(transcript), "-f", "json", "-o", str(out)])
+    assert result.exit_code == 0
+    import json
+
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["mode"] == "medium"
+    assert data["summary"] == "summary text"
+
+
+def test_summarize_format_json_stdout_is_pure_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """stdout must be parseable as JSON — status messages must go to stderr only."""
+    import json
+
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello world\n", encoding="utf-8")
+
+    import providers.llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", lambda self, text: "clean summary")
+    result = runner.invoke(app, ["summarize", str(transcript), "-f", "json"])
+    assert result.exit_code == 0
+    # result.stdout is pure stdout (Click 8 separates stdout/stderr)
+    data = json.loads(result.stdout)
+    assert data["summary"] == "clean summary"
+    assert "Summary saved to" in result.stderr
+
+
+def test_summarize_unknown_format(tmp_path: Path) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello\n", encoding="utf-8")
+    result = runner.invoke(app, ["summarize", str(transcript), "-f", "html"])
+    assert result.exit_code == 1
+    assert "format" in result.output.lower()
+
+
 def test_summarize_llm_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     transcript = tmp_path / "t.txt"
     transcript.write_text("[00:00] hello world\n", encoding="utf-8")
@@ -344,3 +399,124 @@ def test_summarize_llm_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     result = runner.invoke(app, ["summarize", str(transcript)])
     assert result.exit_code == 1
     assert "LLM error" in result.output
+
+
+def test_summarize_write_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello world\n", encoding="utf-8")
+
+    import providers.llm as llm_mod
+    import utils
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", lambda self, text: "summary")
+
+    def bad_write(path: Path, text: str) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(utils, "write_text_atomic", bad_write)
+    result = runner.invoke(app, ["summarize", str(transcript), "-p", "ollama"])
+    assert result.exit_code == 1
+    assert "Error writing" in result.output
+
+
+def test_transcribe_write_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    audio = tmp_path / "test.wav"
+    audio.write_bytes(b"\x00" * 16)
+
+    import providers.whisper as whisper_mod
+    import utils
+    from transcript import Segment, Transcript
+
+    fake_tr = Transcript(segments=(Segment(start=0.0, end=1.0, text="hello"),))
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, **kwargs: None)
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "transcribe", lambda self, audio, language="ru": fake_tr)
+
+    def bad_write(path: Path, text: str) -> None:
+        raise OSError("no space left")
+
+    monkeypatch.setattr(utils, "write_text_atomic", bad_write)
+    result = runner.invoke(app, ["transcribe", str(audio), "-o", str(tmp_path / "out.txt")])
+    assert result.exit_code == 1
+    assert "Error writing" in result.output
+
+
+def test_summarize_summary_language_unknown(tmp_path: Path) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello world\n", encoding="utf-8")
+    result = runner.invoke(app, ["summarize", str(transcript), "--summary-language", "en"])
+    assert result.exit_code == 1
+    assert "en" in result.output
+
+
+def test_summarize_summary_language_ru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("[00:00] hello world\n", encoding="utf-8")
+
+    import providers.llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", lambda self, text: "итог")
+    result = runner.invoke(
+        app,
+        [
+            "summarize",
+            str(transcript),
+            "-p",
+            "ollama",
+            "--summary-language",
+            "ru",
+        ],
+    )
+    assert result.exit_code == 0
+
+
+def test_run_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    audio = tmp_path / "meeting.wav"
+    audio.write_bytes(b"\x00" * 16)
+
+    import providers.llm as llm_mod
+    import providers.whisper as whisper_mod
+    from transcript import Segment, Transcript
+
+    fake_tr = Transcript(segments=(Segment(start=0.0, end=1.0, text="discussed roadmap"),))
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, **kwargs: None)
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "transcribe", lambda self, audio, language="ru": fake_tr)
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "summarize", lambda self, text: "roadmap summary")
+
+    transcript_out = tmp_path / "tr.txt"
+    summary_out = tmp_path / "sum.txt"
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(audio),
+            "--transcript",
+            str(transcript_out),
+            "--summary",
+            str(summary_out),
+            "-p",
+            "ollama",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert transcript_out.exists()
+    assert summary_out.exists()
+    assert "roadmap summary" in summary_out.read_text(encoding="utf-8")
+
+
+def test_transcribe_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    audio = tmp_path / "rec.wav"
+    audio.write_bytes(b"\x00" * 16)
+    out = tmp_path / "out.txt"
+
+    import providers.whisper as whisper_mod
+    from transcript import Segment, Transcript
+
+    fake_tr = Transcript(segments=(Segment(start=0.0, end=2.0, text="hello world"),))
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "__init__", lambda self, **kwargs: None)
+    monkeypatch.setattr(whisper_mod.WhisperTranscriber, "transcribe", lambda self, audio, language="ru": fake_tr)
+
+    result = runner.invoke(app, ["transcribe", str(audio), "-o", str(out)])
+    assert result.exit_code == 0
+    assert out.exists()
+    assert "hello world" in out.read_text(encoding="utf-8")

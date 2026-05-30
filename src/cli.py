@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import logging
 import sys
+from io import TextIOWrapper
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-sys.stdout.reconfigure(write_through=True)
+if isinstance(sys.stdout, TextIOWrapper):
+    sys.stdout.reconfigure(write_through=True)
 
 app = typer.Typer(help="Meeting transcription and summarization tool")
 logger = logging.getLogger(__name__)
@@ -68,19 +70,27 @@ def _ensure_output(path: Path) -> None:
 @app.command()
 def batch(
     folder: Annotated[Path, typer.Argument(file_okay=False, dir_okay=True, help="Folder with audio files to process")],
-    output_dir: Annotated[Optional[Path], typer.Option("-o", "--output-dir", help="Output directory (defaults to folder)")] = None,
-    mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
-    model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
-    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")] = None,
-    language: Annotated[Optional[str], typer.Option("-l", "--language", help="Language code (ru, en, …)")] = None,
+    output_dir: Annotated[
+        Path | None, typer.Option("-o", "--output-dir", help="Output directory (defaults to folder)")
+    ] = None,
+    mode: Annotated[str | None, typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Model name (overrides config)")] = None,
+    provider: Annotated[
+        str | None, typer.Option("-p", "--provider", help="Provider: openai | xai | ollama | lm-studio | vllm")
+    ] = None,
+    language: Annotated[
+        str | None, typer.Option("-l", "--language", help="Transcription language code (ru, en, …)")
+    ] = None,
+    summary_language: Annotated[
+        str | None, typer.Option("--summary-language", help="Summary language (ru). Defaults to ru.")
+    ] = None,
+    output_format: Annotated[str, typer.Option("-f", "--format", help="Output format: telegram | json")] = "telegram",
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Process all audio files in a folder: transcribe and summarize each."""
-    from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
-    from formatters import to_telegram  # noqa: PLC0415
-    from prompts import PROMPTS  # noqa: PLC0415
-    from providers.llm import LLMSummarizer  # noqa: PLC0415
-    from providers.whisper import WhisperTranscriber  # noqa: PLC0415
+    from config import PROVIDER_PRESETS, ConfigError, Settings  # noqa: PLC0415
+    from formatters import to_json, to_telegram  # noqa: PLC0415
+    from providers.factory import make_summarizer, make_transcriber  # noqa: PLC0415
     from utils import write_text_atomic  # noqa: PLC0415
 
     _configure_logging(verbose)
@@ -94,20 +104,20 @@ def batch(
         typer.echo(f"Error: folder not found: {folder}", err=True)
         raise typer.Exit(code=1)
 
-    provider_name = provider or settings.provider
-    mode_name = mode or settings.summary_mode
-    lang = language or settings.language
+    provider_name = provider or settings.summarization.model.provider
+    mode_name = mode or settings.summarization.mode
+    lang = language or settings.transcription.language
     out_dir = output_dir or folder
 
-    if provider_name not in PROVIDER_PRESETS:
-        available = ", ".join(PROVIDER_PRESETS)
-        typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
+    if output_format not in ("telegram", "json"):
+        typer.echo(f"Unknown format: {output_format!r}. Available: telegram, json", err=True)
         raise typer.Exit(code=1)
 
-    if mode_name not in PROMPTS:
-        available = ", ".join(PROMPTS)
-        typer.echo(f"Unknown mode: {mode_name!r}. Available: {available}", err=True)
-        raise typer.Exit(code=1)
+    try:
+        summarizer = make_summarizer(settings, provider_name, mode_name, model, summary_language)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
     audio_files = sorted(p for p in folder.iterdir() if p.suffix.lower() in _AUDIO_EXTENSIONS)
 
@@ -133,17 +143,12 @@ def batch(
         typer.echo(f"Error creating output directory {out_dir}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
+    _warn_if_external(
+        settings.summarization.model.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack
+    )
 
     try:
-        transcriber = WhisperTranscriber(
-            model_name=settings.whisper_model,
-            device=settings.whisper_device,
-            compute_type=settings.whisper_compute_type,
-            beam_size=settings.whisper_beam_size,
-            vad_filter=settings.whisper_vad_filter,
-            condition_on_previous_text=settings.whisper_condition_on_previous_text,
-        )
+        transcriber = make_transcriber(settings)
     except Exception as exc:
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -166,7 +171,8 @@ def batch(
     for audio_path in audio_files:
         typer.echo(f"\nProcessing: {audio_path.name}")
         transcript_path = out_dir / f"{audio_path.stem}.txt"
-        summary_path = out_dir / f"{audio_path.stem}_summary.txt"
+        summary_ext = ".json" if output_format == "json" else ".txt"
+        summary_path = out_dir / f"{audio_path.stem}_summary{summary_ext}"
         try:
             tr = transcriber.transcribe(audio_path, lang)
             write_text_atomic(transcript_path, tr.to_file_format())
@@ -175,7 +181,12 @@ def batch(
                 succeeded += 1
                 continue
             raw = summarizer.summarize(tr.to_text())
-            write_text_atomic(summary_path, to_telegram(raw))
+            if output_format == "json":
+                from models import MeetingSummary  # noqa: PLC0415
+
+                write_text_atomic(summary_path, to_json(MeetingSummary(raw=raw, mode=mode_name)))
+            else:
+                write_text_atomic(summary_path, to_telegram(raw))
             succeeded += 1
         except Exception as exc:
             typer.echo(f"  Error: {exc}", err=True)
@@ -188,9 +199,9 @@ def batch(
 
 @app.command()
 def transcribe(
-    audio: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
-    output: Annotated[Optional[Path], typer.Option("-o", "--output", help="Output transcript file")] = None,
-    language: Annotated[Optional[str], typer.Option("-l", "--language", help="Language code (ru, en, …)")] = None,
+    audio: Annotated[Path | None, typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
+    output: Annotated[Path | None, typer.Option("-o", "--output", help="Output transcript file")] = None,
+    language: Annotated[str | None, typer.Option("-l", "--language", help="Language code (ru, en, …)")] = None,
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
     """Transcribe an audio file to a timestamped transcript."""
@@ -207,20 +218,13 @@ def transcribe(
         typer.echo(f"Error: audio file not found: {audio_path}", err=True)
         raise typer.Exit(code=1)
     output_path = output or settings.transcript
-    lang = language or settings.language
+    lang = language or settings.transcription.language
     _ensure_output(output_path)
     logger.info("Transcribing: %s", audio_path)
     try:
-        from providers.whisper import WhisperTranscriber  # noqa: PLC0415
+        from providers.factory import make_transcriber  # noqa: PLC0415
 
-        transcriber = WhisperTranscriber(
-            model_name=settings.whisper_model,
-            device=settings.whisper_device,
-            compute_type=settings.whisper_compute_type,
-            beam_size=settings.whisper_beam_size,
-            vad_filter=settings.whisper_vad_filter,
-            condition_on_previous_text=settings.whisper_condition_on_previous_text,
-        )
+        transcriber = make_transcriber(settings)
     except Exception as exc:
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -238,16 +242,24 @@ def transcribe(
 
 @app.command()
 def summarize(
-    transcript: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Transcript file to summarize")] = None,
-    output: Annotated[Optional[Path], typer.Option("-o", "--output", help="Output summary file")] = None,
-    mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
-    model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
-    provider: Annotated[Optional[str], typer.Option("-p", "--provider", help="Provider: openai | ollama | lm-studio | vllm")] = None,
+    transcript: Annotated[
+        Path | None, typer.Argument(file_okay=True, dir_okay=False, help="Transcript file to summarize")
+    ] = None,
+    output: Annotated[Path | None, typer.Option("-o", "--output", help="Output summary file")] = None,
+    mode: Annotated[str | None, typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Model name (overrides config)")] = None,
+    provider: Annotated[
+        str | None, typer.Option("-p", "--provider", help="Provider: openai | xai | ollama | lm-studio | vllm")
+    ] = None,
+    summary_language: Annotated[
+        str | None,
+        typer.Option("--summary-language", help="Summary language (ru). Defaults to ru."),
+    ] = None,
+    output_format: Annotated[str, typer.Option("-f", "--format", help="Output format: telegram | json")] = "telegram",
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
 ) -> None:
-    """Generate a Telegram-formatted meeting summary from a transcript."""
-    from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
-    from prompts import PROMPTS  # noqa: PLC0415
+    """Generate a meeting summary from a transcript."""
+    from config import PROVIDER_PRESETS, ConfigError, Settings  # noqa: PLC0415
 
     _configure_logging(verbose)
     try:
@@ -260,24 +272,25 @@ def summarize(
         typer.echo(f"Error: transcript file not found: {transcript_path}", err=True)
         raise typer.Exit(code=1)
     output_path = output or settings.summary
-    provider_name = provider or settings.provider
-    mode_name = mode or settings.summary_mode
+    provider_name = provider or settings.summarization.model.provider
+    mode_name = mode or settings.summarization.mode
 
-    if provider_name not in PROVIDER_PRESETS:
-        available = ", ".join(PROVIDER_PRESETS)
-        typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
+    if output_format not in ("telegram", "json"):
+        typer.echo(f"Unknown format: {output_format!r}. Available: telegram, json", err=True)
         raise typer.Exit(code=1)
 
-    if mode_name not in PROMPTS:
-        available = ", ".join(PROMPTS)
-        typer.echo(f"Unknown mode: {mode_name!r}. Available: {available}", err=True)
-        raise typer.Exit(code=1)
+    try:
+        from providers.factory import make_summarizer  # noqa: PLC0415
+
+        summarizer = make_summarizer(settings, provider_name, mode_name, model, summary_language)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
     _ensure_output(output_path)
     logger.info("Summarizing: %s via %s (mode: %s)", transcript_path, provider_name, mode_name)
 
-    from formatters import to_telegram  # noqa: PLC0415
-    from providers.llm import LLMSummarizer  # noqa: PLC0415
+    from formatters import to_json, to_telegram  # noqa: PLC0415
     from transcript import Transcript  # noqa: PLC0415
 
     try:
@@ -290,7 +303,9 @@ def summarize(
         typer.echo("Error: no speech detected in transcript.", err=True)
         raise typer.Exit(code=1)
 
-    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
+    _warn_if_external(
+        settings.summarization.model.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack
+    )
 
     try:
         summarizer = LLMSummarizer(
@@ -305,34 +320,42 @@ def summarize(
             num_ctx=settings.num_ctx,
         )
         raw = summarizer.summarize(tr.to_text())
-        summary = to_telegram(raw)
+        if output_format == "json":
+            from models import MeetingSummary  # noqa: PLC0415
+
+            formatted = to_json(MeetingSummary(raw=raw, mode=mode_name))
+        else:
+            formatted = to_telegram(raw)
     except Exception as exc:
         typer.echo(f"LLM error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(summary)
+    typer.echo(formatted)
     logger.info("Writing summary to %s", output_path.resolve())
-    _write_atomic(output_path, summary, "summary")
-    typer.echo(f"\nSummary saved to {output_path}")
+    _write_atomic(output_path, formatted, "summary")
+    typer.echo(f"\nSummary saved to {output_path}", err=output_format == "json")
 
 
 @app.command()
 def run(
-    audio: Annotated[Optional[Path], typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
-    language: Annotated[Optional[str], typer.Option("-l", "--language")] = None,
-    mode: Annotated[Optional[str], typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
-    model: Annotated[Optional[str], typer.Option("--model", help="Model name (overrides config)")] = None,
-    provider: Annotated[Optional[str], typer.Option("-p", "--provider")] = None,
-    transcript: Annotated[Optional[Path], typer.Option("--transcript")] = None,
-    summary: Annotated[Optional[Path], typer.Option("--summary")] = None,
+    audio: Annotated[Path | None, typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
+    language: Annotated[
+        str | None, typer.Option("-l", "--language", help="Transcription language code (ru, en, …)")
+    ] = None,
+    summary_language: Annotated[
+        str | None, typer.Option("--summary-language", help="Summary language (ru). Defaults to ru.")
+    ] = None,
+    mode: Annotated[str | None, typer.Option("-m", "--mode", help="Summary mode: brief | medium | detailed")] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Model name (overrides config)")] = None,
+    provider: Annotated[str | None, typer.Option("-p", "--provider")] = None,
+    transcript: Annotated[Path | None, typer.Option("--transcript")] = None,
+    summary: Annotated[Path | None, typer.Option("--summary")] = None,
+    output_format: Annotated[str, typer.Option("-f", "--format", help="Output format: telegram | json")] = "telegram",
     verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
 ) -> None:
     """Run the full pipeline: transcribe audio, then summarize."""
-    from config import ConfigError, PROVIDER_PRESETS, Settings  # noqa: PLC0415
-    from formatters import to_telegram  # noqa: PLC0415
-    from prompts import PROMPTS  # noqa: PLC0415
-    from providers.llm import LLMSummarizer  # noqa: PLC0415
-    from providers.whisper import WhisperTranscriber  # noqa: PLC0415
+    from config import PROVIDER_PRESETS, ConfigError, Settings  # noqa: PLC0415
+    from formatters import to_json, to_telegram  # noqa: PLC0415
 
     _configure_logging(verbose)
     try:
@@ -347,49 +370,46 @@ def run(
 
     transcript_path = transcript or settings.transcript
     summary_path = summary or settings.summary
-    provider_name = provider or settings.provider
-    mode_name = mode or settings.summary_mode
+    provider_name = provider or settings.summarization.model.provider
+    mode_name = mode or settings.summarization.mode
 
-    if provider_name not in PROVIDER_PRESETS:
-        available = ", ".join(PROVIDER_PRESETS)
-        typer.echo(f"Unknown provider: {provider_name!r}. Available: {available}", err=True)
+    if output_format not in ("telegram", "json"):
+        typer.echo(f"Unknown format: {output_format!r}. Available: telegram, json", err=True)
         raise typer.Exit(code=1)
 
-    if mode_name not in PROMPTS:
-        available = ", ".join(PROMPTS)
-        typer.echo(f"Unknown mode: {mode_name!r}. Available: {available}", err=True)
-        raise typer.Exit(code=1)
+    try:
+        from providers.factory import make_summarizer, make_transcriber  # noqa: PLC0415
+
+        summarizer = make_summarizer(settings, provider_name, mode_name, model, summary_language)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
     _ensure_output(transcript_path)
     _ensure_output(summary_path)
 
     try:
-        transcriber = WhisperTranscriber(
-            model_name=settings.whisper_model,
-            device=settings.whisper_device,
-            compute_type=settings.whisper_compute_type,
-            beam_size=settings.whisper_beam_size,
-            vad_filter=settings.whisper_vad_filter,
-            condition_on_previous_text=settings.whisper_condition_on_previous_text,
-        )
+        transcriber = make_transcriber(settings)
     except Exception as exc:
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     try:
-        tr = transcriber.transcribe(audio_path, language or settings.language)
+        tr = transcriber.transcribe(audio_path, language or settings.transcription.language)
     except Exception as exc:
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     _write_atomic(transcript_path, tr.to_file_format(), "transcript")
-    typer.echo(f"Transcript saved to {transcript_path}")
+    typer.echo(f"Transcript saved to {transcript_path}", err=output_format == "json")
 
     if tr.is_empty:
         typer.echo("No speech detected in transcript — summary skipped.", err=True)
         raise typer.Exit(code=1)
 
-    _warn_if_external(settings.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack)
+    _warn_if_external(
+        settings.summarization.model.base_url or PROVIDER_PRESETS[provider_name], provider_name, settings.privacy_ack
+    )
 
     try:
         summarizer = LLMSummarizer(
@@ -410,4 +430,4 @@ def run(
 
     typer.echo(formatted)
     _write_atomic(summary_path, formatted, "summary")
-    typer.echo(f"\nSummary saved to {summary_path}")
+    typer.echo(f"\nSummary saved to {summary_path}", err=output_format == "json")

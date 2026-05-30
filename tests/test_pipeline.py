@@ -6,10 +6,12 @@ from transcript import Segment, Transcript
 
 class _FakeTranscriber:
     def transcribe(self, audio: Path, language: str) -> Transcript:
-        return Transcript(segments=(
-            Segment(0.0, 1.0, "Обсудили бюджет"),
-            Segment(1.0, 2.0, "Решили взять Иванова"),
-        ))
+        return Transcript(
+            segments=(
+                Segment(0.0, 1.0, "Обсудили бюджет"),
+                Segment(1.0, 2.0, "Решили взять Иванова"),
+            )
+        )
 
 
 class _FakeSummarizer:

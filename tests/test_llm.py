@@ -1,49 +1,94 @@
-import pytest
 from unittest.mock import MagicMock
-from prompts import PROMPTS, SUMMARY_PROMPT_BRIEF_RU, SUMMARY_PROMPT_DETAILED_RU, SUMMARY_PROMPT_MEDIUM_RU
+
+import pytest
+
+from prompts import (
+    CHUNK_PROMPTS,
+    PROMPTS,
+    SUMMARY_MODES,
+    SUMMARY_PROMPT_BRIEF_RU,
+    SUMMARY_PROMPT_DETAILED_RU,
+    SUMMARY_PROMPT_MEDIUM_RU,
+    get_prompt,
+)
 from providers.llm import LLMSummarizer
 
 
-def test_prompts_has_all_modes() -> None:
-    assert set(PROMPTS) == {"brief", "medium", "detailed"}
+def test_prompts_has_ru_language() -> None:
+    assert "ru" in PROMPTS
+
+
+def test_prompts_ru_has_all_modes() -> None:
+    assert set(PROMPTS["ru"]) == {"brief", "medium", "detailed"}
+
+
+def test_summary_modes_constant() -> None:
+    assert SUMMARY_MODES == {"brief", "medium", "detailed"}
 
 
 def test_all_prompts_contain_placeholder() -> None:
-    for name, (_, user_template) in PROMPTS.items():
-        assert "{transcript}" in user_template, f"Mode {name!r} missing {{transcript}} placeholder"
+    for lang, modes in PROMPTS.items():
+        for mode, (_, user_template) in modes.items():
+            assert "{transcript}" in user_template, f"{lang}/{mode!r} missing {{transcript}} placeholder"
 
 
 def test_default_prompt_is_medium() -> None:
     s = LLMSummarizer(model="test")
-    assert s._prompt_template is PROMPTS["medium"]
+    assert s._prompt_template is PROMPTS["ru"]["medium"]
 
 
 def test_prompts_map_to_correct_constants() -> None:
-    assert PROMPTS["brief"][1] is SUMMARY_PROMPT_BRIEF_RU
-    assert PROMPTS["medium"][1] is SUMMARY_PROMPT_MEDIUM_RU
-    assert PROMPTS["detailed"][1] is SUMMARY_PROMPT_DETAILED_RU
+    assert PROMPTS["ru"]["brief"][1] is SUMMARY_PROMPT_BRIEF_RU
+    assert PROMPTS["ru"]["medium"][1] is SUMMARY_PROMPT_MEDIUM_RU
+    assert PROMPTS["ru"]["detailed"][1] is SUMMARY_PROMPT_DETAILED_RU
 
 
 def test_transcript_only_in_user_template() -> None:
-    for name, (system, user_template) in PROMPTS.items():
-        assert "{transcript}" not in system, f"Mode {name!r}: placeholder leaked into system prompt"
-        assert "{transcript}" in user_template, f"Mode {name!r}: placeholder missing from user template"
+    for lang, modes in PROMPTS.items():
+        for mode, (system, user_template) in modes.items():
+            assert "{transcript}" not in system, f"{lang}/{mode!r}: placeholder leaked into system prompt"
+            assert "{transcript}" in user_template, f"{lang}/{mode!r}: placeholder missing from user template"
 
 
 def test_user_templates_have_transcript_delimiters() -> None:
-    for name, (_, user_template) in PROMPTS.items():
-        assert "<transcript>" in user_template, f"Mode {name!r}: missing <transcript> tag"
-        assert "</transcript>" in user_template, f"Mode {name!r}: missing </transcript> tag"
+    for lang, modes in PROMPTS.items():
+        for mode, (_, user_template) in modes.items():
+            assert "<transcript>" in user_template, f"{lang}/{mode!r}: missing <transcript> tag"
+            assert "</transcript>" in user_template, f"{lang}/{mode!r}: missing </transcript> tag"
 
 
 def test_system_prompt_has_injection_warning() -> None:
-    for name, (system, _) in PROMPTS.items():
-        assert "transcript" in system.lower(), f"Mode {name!r}: system prompt doesn't mention transcript boundary"
+    for lang, modes in PROMPTS.items():
+        for mode, (system, _) in modes.items():
+            assert "transcript" in system.lower(), f"{lang}/{mode!r}: system prompt doesn't mention transcript boundary"
 
 
-def test_all_prompts_share_system_prompt() -> None:
-    system_prompts = {system for system, _ in PROMPTS.values()}
-    assert len(system_prompts) == 1, "All modes should use the same system prompt"
+def test_all_prompts_per_language_share_system_prompt() -> None:
+    for lang, modes in PROMPTS.items():
+        system_prompts = {system for system, _ in modes.values()}
+        assert len(system_prompts) == 1, f"All modes for language {lang!r} should use the same system prompt"
+
+
+def test_chunk_prompts_has_ru() -> None:
+    assert "ru" in CHUNK_PROMPTS
+    system, user_template = CHUNK_PROMPTS["ru"]
+    assert "{transcript}" in user_template
+    assert "<transcript>" in user_template
+
+
+def test_get_prompt_returns_correct_template() -> None:
+    result = get_prompt("ru", "brief")
+    assert result is PROMPTS["ru"]["brief"]
+
+
+def test_get_prompt_unknown_language_raises() -> None:
+    with pytest.raises(KeyError, match="Unsupported summary language"):
+        get_prompt("en", "brief")
+
+
+def test_get_prompt_unknown_mode_raises() -> None:
+    with pytest.raises(KeyError, match="not available"):
+        get_prompt("ru", "ultra")
 
 
 def test_build_messages_structure() -> None:
@@ -256,6 +301,7 @@ def test_non_retryable_error_propagates_immediately(monkeypatch: pytest.MonkeyPa
 
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
+
 
 def test_split_into_chunks_basic() -> None:
     s = LLMSummarizer(model="test", max_chars=10)

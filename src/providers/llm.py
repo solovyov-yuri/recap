@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from prompts import PROMPTS, SUMMARY_PROMPT_MEDIUM_RU  # noqa: F401 — re-exported for consumers
+from prompts import CHUNK_PROMPTS, PROMPTS, SUMMARY_PROMPT_MEDIUM_RU  # noqa: F401 — re-exported for consumers
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +11,7 @@ def _truncate(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     cut = text.rfind("\n", 0, max_chars)
-    return text[:cut if cut != -1 else max_chars]
+    return text[: cut if cut != -1 else max_chars]
 
 
 class LLMSummarizer:
@@ -20,7 +20,8 @@ class LLMSummarizer:
         model: str,
         api_key: str | None = None,
         base_url: str | None = None,
-        prompt_template: str | tuple[str, str] = PROMPTS["medium"],
+        prompt_template: str | tuple[str, str] = PROMPTS["ru"]["medium"],
+        chunk_prompt: tuple[str, str] | None = None,
         max_chars: int = 60_000,
         timeout: float = 60.0,
         max_retries: int = 2,
@@ -32,6 +33,7 @@ class LLMSummarizer:
         self._api_key = api_key
         self._base_url = base_url
         self._prompt_template = prompt_template
+        self._chunk_prompt = chunk_prompt if chunk_prompt is not None else CHUNK_PROMPTS["ru"]
         self._max_chars = max_chars
         self._timeout = timeout
         self._max_retries = max_retries
@@ -59,8 +61,9 @@ class LLMSummarizer:
 
     def _call_llm(self, messages: list[dict[str, str]], client, console) -> str:
         """Make one streaming LLM call with retry. Returns the full response string."""
-        import openai  # noqa: PLC0415
         import time  # noqa: PLC0415
+
+        import openai  # noqa: PLC0415
 
         _RETRYABLE = (openai.APITimeoutError, openai.APIConnectionError, openai.InternalServerError)
         last_exc: Exception | None = None
@@ -68,7 +71,9 @@ class LLMSummarizer:
             if attempt > 0:
                 logger.warning(
                     "LLM request failed, retrying (%d/%d): %s",
-                    attempt, self._max_retries, last_exc,
+                    attempt,
+                    self._max_retries,
+                    last_exc,
                 )
                 time.sleep(self._retry_backoff)
             try:
@@ -114,7 +119,7 @@ class LLMSummarizer:
                     current = []
                     current_len = 0
                 for start in range(0, len(line), self._max_chars):
-                    chunks.append(line[start:start + self._max_chars])
+                    chunks.append(line[start : start + self._max_chars])
                 continue
             line_len = len(line) + 1  # +1 for the newline
             if current_len + line_len > self._max_chars and current:
@@ -131,15 +136,13 @@ class LLMSummarizer:
     _MAX_MERGE_DEPTH = 3
 
     def _chunked_summarize(self, transcript_text: str, client, console, _depth: int = 0) -> str:
-        from prompts import CHUNK_PROMPT  # noqa: PLC0415
-
         chunks = self._split_into_chunks(transcript_text)
         logger.info("Transcript split into %d chunks for summarization.", len(chunks))
 
         chunk_summaries: list[str] = []
         for i, chunk in enumerate(chunks, 1):
             logger.info("Summarizing chunk %d/%d…", i, len(chunks))
-            messages = self._build_messages(chunk, prompt_template=CHUNK_PROMPT)
+            messages = self._build_messages(chunk, prompt_template=self._chunk_prompt)
             summary = self._call_llm(messages, client, console)
             chunk_summaries.append(f"[Часть {i}]\n{summary}")
 
@@ -169,7 +172,8 @@ class LLMSummarizer:
         if len(transcript_text) > self._max_chars and self._chunking_mode == "truncate":
             logger.warning(
                 "Transcript truncated from %d to %d chars to fit context window.",
-                len(transcript_text), self._max_chars,
+                len(transcript_text),
+                self._max_chars,
             )
             transcript_text = _truncate(transcript_text, self._max_chars)
 
