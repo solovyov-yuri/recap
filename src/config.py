@@ -14,6 +14,7 @@ class ConfigError(ValueError):
 
 PROVIDER_PRESETS: dict[str, str | None] = {
     "openai":    None,
+    "xai":      "https://api.x.ai/v1",
     "ollama":    "http://localhost:11434/v1",
     "lm-studio": "http://localhost:1234/v1",
     "vllm":      "http://localhost:8000/v1",
