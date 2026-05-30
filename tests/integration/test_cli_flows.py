@@ -630,3 +630,155 @@ def test_privacy_warning_suppressed_by_privacy_ack(
     result = runner.invoke(app, ["summarize", str(transcript_file), "-p", "openai"])
     combined = result.stdout + result.stderr
     assert "Warning" not in combined
+
+
+# ─── preprocessing integration ────────────────────────────────────────────────
+
+
+def test_transcribe_with_preprocessing_passes_prepared_path_to_transcriber(
+    tmp_path: Path,
+    audio_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When preprocessing.enabled=true, transcriber receives the .preprocessed.wav path."""
+    (tmp_path / "config.yaml").write_text(
+        "preprocessing:\n  enabled: true\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    received_paths: list[Path] = []
+
+    class PathCapturingTranscriber:
+        def transcribe(self, audio: Path, language: str = "ru") -> Transcript:
+            received_paths.append(audio)
+            from transcript import Segment, Transcript
+
+            return Transcript(segments=(Segment(start=0.0, end=1.0, text="hello"),))
+
+    from unittest.mock import patch
+
+    import providers.factory as factory_mod
+
+    monkeypatch.setattr(factory_mod, "make_transcriber", lambda settings: PathCapturingTranscriber())
+    out = tmp_path / "tr.txt"
+
+    with patch("preprocessing.subprocess.run") as mock_run:
+        mock_run.return_value = __import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(returncode=0)
+        result = runner.invoke(app, ["transcribe", str(audio_file), "-o", str(out)])
+
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert len(received_paths) == 1
+    assert received_paths[0] != audio_file
+    assert str(received_paths[0]).endswith(".preprocessed.wav")
+
+
+def test_run_with_preprocessing_passes_prepared_path_to_transcriber(
+    tmp_path: Path,
+    audio_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run command: transcriber receives prepared path, outputs use original stem."""
+    (tmp_path / "config.yaml").write_text(
+        "preprocessing:\n  enabled: true\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    received_paths: list[Path] = []
+
+    class PathCapturingTranscriber:
+        def transcribe(self, audio: Path, language: str = "ru") -> Transcript:
+            received_paths.append(audio)
+            from transcript import Segment, Transcript
+
+            return Transcript(segments=(Segment(start=0.0, end=1.0, text="hello"),))
+
+    from unittest.mock import MagicMock, patch
+
+    import providers.factory as factory_mod
+
+    monkeypatch.setattr(factory_mod, "make_transcriber", lambda settings: PathCapturingTranscriber())
+    monkeypatch.setattr(
+        factory_mod,
+        "make_summarizer",
+        lambda settings, provider, mode, model_override=None, summary_language=None: FakeSummarizer(),
+    )
+    tr_out = tmp_path / "tr.txt"
+    sum_out = tmp_path / "sum.txt"
+
+    with patch("preprocessing.subprocess.run", return_value=MagicMock(returncode=0)):
+        result = runner.invoke(
+            app,
+            ["run", str(audio_file), "--transcript", str(tr_out), "--summary", str(sum_out), "-p", "ollama"],
+        )
+
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert received_paths[0] != audio_file
+    assert str(received_paths[0]).endswith(".preprocessed.wav")
+
+
+def test_batch_preprocessing_error_on_one_file_continues_others(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If preprocessing fails for one file in batch, others continue."""
+    (tmp_path / "config.yaml").write_text(
+        "preprocessing:\n  enabled: true\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    (tmp_path / "good.wav").write_bytes(b"\x00" * 16)
+    (tmp_path / "bad.wav").write_bytes(b"\x00" * 16)
+
+    import subprocess
+    from unittest.mock import patch
+
+    import providers.factory as factory_mod
+
+    monkeypatch.setattr(factory_mod, "make_transcriber", lambda settings: FakeTranscriber())
+    monkeypatch.setattr(
+        factory_mod,
+        "make_summarizer",
+        lambda settings, provider, mode, model_override=None, summary_language=None: FakeSummarizer(),
+    )
+
+    call_count = [0]
+
+    def selective_ffmpeg(cmd: list[str], **kwargs: object):
+        call_count[0] += 1
+        if "bad.wav" in str(cmd):
+            raise subprocess.CalledProcessError(1, cmd, stderr="corrupt audio")
+        from unittest.mock import MagicMock
+        return MagicMock(returncode=0)
+
+    with patch("preprocessing.subprocess.run", selective_ffmpeg):
+        result = runner.invoke(app, ["batch", str(tmp_path), "-p", "ollama"])
+
+    assert result.exit_code == 1
+    assert "1 succeeded, 1 failed" in result.stdout + result.stderr
+
+
+def test_transcribe_preprocessing_disabled_uses_original_path(
+    tmp_path: Path,
+    audio_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When preprocessing.enabled=false (default), transcriber gets the original path."""
+    monkeypatch.chdir(tmp_path)
+
+    received_paths: list[Path] = []
+
+    class PathCapturingTranscriber:
+        def transcribe(self, audio: Path, language: str = "ru") -> Transcript:
+            received_paths.append(audio)
+            from transcript import Segment, Transcript
+
+            return Transcript(segments=(Segment(start=0.0, end=1.0, text="hello"),))
+
+    import providers.factory as factory_mod
+
+    monkeypatch.setattr(factory_mod, "make_transcriber", lambda settings: PathCapturingTranscriber())
+    out = tmp_path / "tr.txt"
+    result = runner.invoke(app, ["transcribe", str(audio_file), "-o", str(out)])
+
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert received_paths[0] == audio_file

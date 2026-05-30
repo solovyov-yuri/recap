@@ -44,7 +44,7 @@ uv run mypy src/                         # type check
 
 Settings are resolved in priority order: **CLI flags > env vars > config.yaml > defaults**.
 
-Config is a **nested** schema with two sections — `transcription` and `summarization` — each holding a `model` sub-section. There is no backwards compatibility with the old flat keys: any unknown key (legacy or otherwise) raises `ConfigError` with a generic "Unknown config key" message.
+Config is a **nested** schema with three sections — `transcription`, `summarization`, and `preprocessing`. `transcription` and `summarization` each hold a `model` sub-section. There is no backwards compatibility with the old flat keys: any unknown key (legacy or otherwise) raises `ConfigError` with a generic "Unknown config key" message.
 
 **`config.yaml`** (optional, at project root):
 ```yaml
@@ -74,6 +74,17 @@ summarization:
     api_key: null
     base_url: null
 privacy_ack: false             # set true to suppress external-endpoint warning
+preprocessing:
+  enabled: false               # set true to preprocess audio with ffmpeg before Whisper
+  sample_rate: 16000
+  channels: 1                  # 1 (mono) or 2 (stereo)
+  codec: pcm_s16le             # only pcm_s16le is supported
+  loudness_normalization: false
+  target_lufs: -16.0
+  true_peak_db: -1.5
+  loudness_range: 11.0
+  highpass_hz: null            # positive integer or null
+  keep_temp: false             # keep preprocessed WAV for diagnostics
 ```
 
 **Environment variables** (override config.yaml; names mirror the nested path):
@@ -102,6 +113,16 @@ privacy_ack: false             # set true to suppress external-endpoint warning
 | `RECAP_SUMMARIZATION_MODEL_NAME` | `summarization.model.name` |
 | `RECAP_SUMMARIZATION_MODEL_API_KEY` | `summarization.model.api_key` |
 | `RECAP_SUMMARIZATION_MODEL_BASE_URL` | `summarization.model.base_url` |
+| `RECAP_PREPROCESSING_ENABLED` | `preprocessing.enabled` |
+| `RECAP_PREPROCESSING_SAMPLE_RATE` | `preprocessing.sample_rate` |
+| `RECAP_PREPROCESSING_CHANNELS` | `preprocessing.channels` |
+| `RECAP_PREPROCESSING_CODEC` | `preprocessing.codec` |
+| `RECAP_PREPROCESSING_LOUDNESS_NORMALIZATION` | `preprocessing.loudness_normalization` |
+| `RECAP_PREPROCESSING_TARGET_LUFS` | `preprocessing.target_lufs` |
+| `RECAP_PREPROCESSING_TRUE_PEAK_DB` | `preprocessing.true_peak_db` |
+| `RECAP_PREPROCESSING_LOUDNESS_RANGE` | `preprocessing.loudness_range` |
+| `RECAP_PREPROCESSING_HIGHPASS_HZ` | `preprocessing.highpass_hz` |
+| `RECAP_PREPROCESSING_KEEP_TEMP` | `preprocessing.keep_temp` |
 
 `summarization.language` defaults to `null`; the factory falls back to `"ru"`. It deliberately does not inherit `transcription.language`, so English audio still produces a Russian summary unless `summarization.language` or `--summary-language` is set explicitly.
 
@@ -126,6 +147,7 @@ src/
 ├── formatters.py    # to_telegram(), to_plain(), to_json() — format LLM output
 ├── models.py        # MeetingSummary dataclass (used by JSON formatter)
 ├── utils.py         # write_text_atomic() — safe file writes via tmp+rename
+├── preprocessing.py # prepared_audio() context manager — optional ffmpeg preprocessing before Whisper
 ├── prompts.py       # PROMPTS[lang][mode] nested dict; get_prompt(); CHUNK_PROMPTS
 └── providers/
     ├── factory.py   # make_summarizer(), make_transcriber() — single wiring point

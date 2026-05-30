@@ -42,3 +42,16 @@ summarization:
 # Privacy
 # Set to true to suppress the warning when transcript is sent to an external endpoint.
 # privacy_ack: false
+
+# Audio preprocessing (requires ffmpeg; disabled by default)
+# preprocessing:
+#   enabled: false
+#   sample_rate: 16000        # output sample rate in Hz
+#   channels: 1               # 1 (mono) or 2 (stereo)
+#   codec: pcm_s16le          # only pcm_s16le is supported
+#   loudness_normalization: false  # apply EBU R128 loudnorm filter
+#   target_lufs: -16.0        # integrated loudness target (LUFS)
+#   true_peak_db: -1.5        # true peak ceiling (dBTP)
+#   loudness_range: 11.0      # loudness range target (LU)
+#   highpass_hz: null         # high-pass filter cutoff in Hz (null = disabled)
+#   keep_temp: false          # keep the preprocessed WAV for diagnostics

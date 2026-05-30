@@ -61,9 +61,23 @@ class SummarizationSettings:
     model: SummarizationModelSettings = field(default_factory=SummarizationModelSettings)
 
 
+@dataclass(frozen=True)
+class PreprocessingSettings:
+    enabled: bool = False
+    sample_rate: int = 16000
+    channels: int = 1
+    codec: str = "pcm_s16le"
+    loudness_normalization: bool = False
+    target_lufs: float = -16.0
+    true_peak_db: float = -1.5
+    loudness_range: float = 11.0
+    highpass_hz: int | None = None
+    keep_temp: bool = False
+
+
 # ── Schema: allowed keys per section ────────────────────────────────────────────
 
-_TOP_LEVEL_KEYS = {"audio", "transcript", "summary", "transcription", "summarization", "privacy_ack"}
+_TOP_LEVEL_KEYS = {"audio", "transcript", "summary", "transcription", "summarization", "privacy_ack", "preprocessing"}
 _TRANSCRIPTION_KEYS = {"language", "model"}
 _TRANSCRIPTION_MODEL_KEYS = {
     "provider",
@@ -84,6 +98,18 @@ _SUMMARIZATION_KEYS = {
     "model",
 }
 _SUMMARIZATION_MODEL_KEYS = {"provider", "name", "api_key", "base_url"}
+_PREPROCESSING_KEYS = {
+    "enabled",
+    "sample_rate",
+    "channels",
+    "codec",
+    "loudness_normalization",
+    "target_lufs",
+    "true_peak_db",
+    "loudness_range",
+    "highpass_hz",
+    "keep_temp",
+}
 
 # ── Environment variable maps (one per section) ─────────────────────────────────
 
@@ -118,6 +144,18 @@ _ENV_SUMMARIZATION_MODEL = {
     "RECAP_SUMMARIZATION_MODEL_NAME": "name",
     "RECAP_SUMMARIZATION_MODEL_API_KEY": "api_key",
     "RECAP_SUMMARIZATION_MODEL_BASE_URL": "base_url",
+}
+_ENV_PREPROCESSING = {
+    "RECAP_PREPROCESSING_ENABLED": "enabled",
+    "RECAP_PREPROCESSING_SAMPLE_RATE": "sample_rate",
+    "RECAP_PREPROCESSING_CHANNELS": "channels",
+    "RECAP_PREPROCESSING_CODEC": "codec",
+    "RECAP_PREPROCESSING_LOUDNESS_NORMALIZATION": "loudness_normalization",
+    "RECAP_PREPROCESSING_TARGET_LUFS": "target_lufs",
+    "RECAP_PREPROCESSING_TRUE_PEAK_DB": "true_peak_db",
+    "RECAP_PREPROCESSING_LOUDNESS_RANGE": "loudness_range",
+    "RECAP_PREPROCESSING_HIGHPASS_HZ": "highpass_hz",
+    "RECAP_PREPROCESSING_KEEP_TEMP": "keep_temp",
 }
 
 _TRUE_STRINGS = ("true", "1", "yes")
@@ -174,6 +212,7 @@ class Settings:
     summary: Path = Path("data/summary.txt")
     transcription: TranscriptionSettings = field(default_factory=TranscriptionSettings)
     summarization: SummarizationSettings = field(default_factory=SummarizationSettings)
+    preprocessing: PreprocessingSettings = field(default_factory=PreprocessingSettings)
     privacy_ack: bool = False
 
     @classmethod
@@ -199,11 +238,13 @@ class Settings:
         transcription_model = _coerce_section(transcription, "model")
         summarization = _coerce_section(raw, "summarization")
         summarization_model = _coerce_section(summarization, "model")
+        preprocessing = _coerce_section(raw, "preprocessing")
 
         _reject_unknown(transcription, _TRANSCRIPTION_KEYS, prefix="transcription")
         _reject_unknown(transcription_model, _TRANSCRIPTION_MODEL_KEYS, prefix="transcription.model")
         _reject_unknown(summarization, _SUMMARIZATION_KEYS, prefix="summarization")
         _reject_unknown(summarization_model, _SUMMARIZATION_MODEL_KEYS, prefix="summarization.model")
+        _reject_unknown(preprocessing, _PREPROCESSING_KEYS, prefix="preprocessing")
         transcription.pop("model", None)
         summarization.pop("model", None)
 
@@ -212,6 +253,7 @@ class Settings:
         _apply_env(transcription_model, _ENV_TRANSCRIPTION_MODEL)
         _apply_env(summarization, _ENV_SUMMARIZATION)
         _apply_env(summarization_model, _ENV_SUMMARIZATION_MODEL)
+        _apply_env(preprocessing, _ENV_PREPROCESSING)
 
         # ── Coerce + validate ───────────────────────────────────────────────────
         for path_field in ("audio", "transcript", "summary"):
@@ -284,6 +326,41 @@ class Settings:
                 available = ", ".join(sorted(PROMPTS))
                 raise ConfigError(f"'summarization.language' must be one of: {available}. Got {lang!r}")
 
+        # ── Preprocessing coerce + validate ─────────────────────────────────────
+        _coerce_bool(preprocessing, "enabled")
+        _coerce_bool(preprocessing, "loudness_normalization")
+        _coerce_bool(preprocessing, "keep_temp")
+        _coerce_positive_int(preprocessing, "sample_rate", "preprocessing.sample_rate")
+        _coerce_positive_int(preprocessing, "channels", "preprocessing.channels")
+        if (channels := preprocessing.get("channels")) is not None and channels not in (1, 2):
+            raise ConfigError(f"'preprocessing.channels' must be 1 or 2, got {channels}")
+
+        if (codec := preprocessing.get("codec")) is not None and codec != "pcm_s16le":
+            raise ConfigError(f"'preprocessing.codec' must be 'pcm_s16le'. Got {codec!r}")
+
+        for float_field in ("target_lufs", "true_peak_db", "loudness_range"):
+            if float_field in preprocessing:
+                try:
+                    preprocessing[float_field] = float(preprocessing[float_field])
+                except (ValueError, TypeError):
+                    raise ConfigError(
+                        f"'preprocessing.{float_field}' must be a number, got {preprocessing[float_field]!r}"
+                    )
+
+        if "highpass_hz" in preprocessing:
+            val = preprocessing["highpass_hz"]
+            if val is not None:
+                try:
+                    preprocessing["highpass_hz"] = int(val)
+                except (ValueError, TypeError):
+                    raise ConfigError(
+                        f"'preprocessing.highpass_hz' must be a positive integer or null, got {val!r}"
+                    )
+                if preprocessing["highpass_hz"] <= 0:
+                    raise ConfigError(
+                        f"'preprocessing.highpass_hz' must be a positive integer, got {preprocessing['highpass_hz']}"
+                    )
+
         return cls(
             **top,
             transcription=TranscriptionSettings(
@@ -294,4 +371,5 @@ class Settings:
                 **summarization,
                 model=SummarizationModelSettings(**summarization_model),
             ),
+            preprocessing=PreprocessingSettings(**preprocessing),
         )

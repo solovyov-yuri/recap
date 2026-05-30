@@ -90,6 +90,7 @@ def batch(
     """Process all audio files in a folder: transcribe and summarize each."""
     from config import PROVIDER_PRESETS, ConfigError, Settings  # noqa: PLC0415
     from formatters import to_json, to_telegram  # noqa: PLC0415
+    from preprocessing import prepared_audio  # noqa: PLC0415
     from providers.factory import make_summarizer, make_transcriber  # noqa: PLC0415
     from utils import write_text_atomic  # noqa: PLC0415
 
@@ -162,7 +163,8 @@ def batch(
         summary_ext = ".json" if output_format == "json" else ".txt"
         summary_path = out_dir / f"{audio_path.stem}_summary{summary_ext}"
         try:
-            tr = transcriber.transcribe(audio_path, lang)
+            with prepared_audio(audio_path, settings.preprocessing) as prepared:
+                tr = transcriber.transcribe(prepared, lang)
             write_text_atomic(transcript_path, tr.to_file_format())
             if tr.is_empty:
                 typer.echo("  No speech detected — summary skipped.", err=True)
@@ -218,7 +220,10 @@ def transcribe(
         raise typer.Exit(code=1) from exc
 
     try:
-        transcript = transcriber.transcribe(audio_path, lang)
+        from preprocessing import prepared_audio  # noqa: PLC0415
+
+        with prepared_audio(audio_path, settings.preprocessing) as prepared:
+            transcript = transcriber.transcribe(prepared, lang)
     except Exception as exc:
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -372,7 +377,10 @@ def run(
         raise typer.Exit(code=1) from exc
 
     try:
-        tr = transcriber.transcribe(audio_path, language or settings.transcription.language)
+        from preprocessing import prepared_audio  # noqa: PLC0415
+
+        with prepared_audio(audio_path, settings.preprocessing) as prepared:
+            tr = transcriber.transcribe(prepared, language or settings.transcription.language)
     except Exception as exc:
         typer.echo(f"Transcription error: {exc}", err=True)
         raise typer.Exit(code=1) from exc

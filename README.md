@@ -238,6 +238,23 @@ uv run recap run audio.wav -f json > summary.json
 
 > **Breaking change:** флаг `-m` переназначен с `--model` на `--mode`. Для указания модели используйте `--model`.
 
+### Предобработка аудио
+
+Опционально можно привести входные файлы к стабильному WAV перед Whisper. Требует установленный `ffmpeg`.
+
+```yaml
+preprocessing:
+  enabled: true
+  sample_rate: 16000
+  channels: 1
+  loudness_normalization: true
+  highpass_hz: 70
+```
+
+По умолчанию предобработка выключена (`enabled: false`) — `ffmpeg` при этом не требуется. При `enabled: true` и отсутствии `ffmpeg` команда завершается с понятной ошибкой. В пакетном режиме (`batch`) ошибка предобработки одного файла не прерывает обработку остальных.
+
+Переменные среды: `RECAP_PREPROCESSING_ENABLED`, `RECAP_PREPROCESSING_SAMPLE_RATE`, `RECAP_PREPROCESSING_CHANNELS`, `RECAP_PREPROCESSING_CODEC`, `RECAP_PREPROCESSING_LOUDNESS_NORMALIZATION`, `RECAP_PREPROCESSING_TARGET_LUFS`, `RECAP_PREPROCESSING_TRUE_PEAK_DB`, `RECAP_PREPROCESSING_LOUDNESS_RANGE`, `RECAP_PREPROCESSING_HIGHPASS_HZ`, `RECAP_PREPROCESSING_KEEP_TEMP`.
+
 ## Telegram Markdown
 
 Саммари форматируется в **Telegram Markdown v1** (`parse_mode="Markdown"`):
