@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from config import PreprocessingSettings
-from preprocessing import PreprocessingError, prepared_audio
+from preprocessing import PreprocessingError, prepared_audio, preprocess_audio
 
 
 def _settings(**kwargs) -> PreprocessingSettings:
@@ -210,6 +210,180 @@ def test_temp_file_kept_after_context_keep_temp_true(tmp_path: Path) -> None:
 
     assert tmp_path_captured[0].exists()
     tmp_path_captured[0].unlink()
+
+
+# ── preprocess_audio: direct function ────────────────────────────────────────
+
+
+def test_preprocess_audio_output_path_is_last_arg(tmp_path: Path) -> None:
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"\x00" * 16)
+    output = tmp_path / "out.wav"
+    settings = _settings()
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: object) -> MagicMock:
+        captured.append(list(cmd))
+        return MagicMock(returncode=0)
+
+    with patch("subprocess.run", fake_run):
+        result = preprocess_audio(audio, output, settings)
+
+    assert result == output
+    cmd = captured[0]
+    assert cmd[0] == "ffmpeg"
+    assert "-y" in cmd
+    assert "-i" in cmd
+    assert str(audio) in cmd
+    assert cmd[-1] == str(output)
+
+
+def test_preprocess_audio_contains_required_args(tmp_path: Path) -> None:
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"\x00" * 16)
+    output = tmp_path / "out.wav"
+    settings = _settings()
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: object) -> MagicMock:
+        captured.append(list(cmd))
+        return MagicMock(returncode=0)
+
+    with patch("subprocess.run", fake_run):
+        preprocess_audio(audio, output, settings)
+
+    cmd = captured[0]
+    assert "-ac" in cmd
+    assert str(settings.channels) in cmd
+    assert "-ar" in cmd
+    assert str(settings.sample_rate) in cmd
+    assert "-c:a" in cmd
+    assert settings.codec in cmd
+
+
+def test_preprocess_audio_ffmpeg_not_found(tmp_path: Path) -> None:
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"\x00" * 16)
+    output = tmp_path / "out.wav"
+    settings = _settings()
+
+    def fake_run(cmd: list[str], **kwargs: object) -> None:
+        raise FileNotFoundError("ffmpeg")
+
+    with patch("subprocess.run", fake_run):
+        with pytest.raises(PreprocessingError, match="ffmpeg not found"):
+            preprocess_audio(audio, output, settings)
+
+
+def test_preprocess_audio_called_process_error_none_stderr(tmp_path: Path) -> None:
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"\x00" * 16)
+    output = tmp_path / "out.wav"
+    settings = _settings()
+
+    def fake_run(cmd: list[str], **kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, cmd, stderr=None)
+
+    with patch("subprocess.run", fake_run):
+        with pytest.raises(PreprocessingError, match="ffmpeg failed"):
+            preprocess_audio(audio, output, settings)
+
+
+def test_preprocess_audio_called_process_error_with_stderr(tmp_path: Path) -> None:
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"\x00" * 16)
+    output = tmp_path / "out.wav"
+    settings = _settings()
+
+    def fake_run(cmd: list[str], **kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, cmd, stderr="codec not found")
+
+    with patch("subprocess.run", fake_run):
+        with pytest.raises(PreprocessingError, match="codec not found"):
+            preprocess_audio(audio, output, settings)
+
+
+def test_preprocess_audio_loudnorm_filter(tmp_path: Path) -> None:
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"\x00" * 16)
+    output = tmp_path / "out.wav"
+    settings = _settings(loudness_normalization=True)
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: object) -> MagicMock:
+        captured.append(list(cmd))
+        return MagicMock(returncode=0)
+
+    with patch("subprocess.run", fake_run):
+        preprocess_audio(audio, output, settings)
+
+    cmd = captured[0]
+    assert "-af" in cmd
+    assert "loudnorm" in cmd[cmd.index("-af") + 1]
+
+
+def test_preprocess_audio_highpass_filter(tmp_path: Path) -> None:
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"\x00" * 16)
+    output = tmp_path / "out.wav"
+    settings = _settings(highpass_hz=70)
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: object) -> MagicMock:
+        captured.append(list(cmd))
+        return MagicMock(returncode=0)
+
+    with patch("subprocess.run", fake_run):
+        preprocess_audio(audio, output, settings)
+
+    cmd = captured[0]
+    assert "-af" in cmd
+    af_val = cmd[cmd.index("-af") + 1]
+    assert "highpass" in af_val
+    assert "70" in af_val
+
+
+def test_preprocess_audio_both_filters_combined(tmp_path: Path) -> None:
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"\x00" * 16)
+    output = tmp_path / "out.wav"
+    settings = _settings(highpass_hz=70, loudness_normalization=True)
+
+    captured: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: object) -> MagicMock:
+        captured.append(list(cmd))
+        return MagicMock(returncode=0)
+
+    with patch("subprocess.run", fake_run):
+        preprocess_audio(audio, output, settings)
+
+    af_val = captured[0][captured[0].index("-af") + 1]
+    assert "highpass" in af_val
+    assert "loudnorm" in af_val
+
+
+def test_prepared_audio_delegates_to_preprocess_audio(tmp_path: Path) -> None:
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"\x00" * 16)
+    settings = _settings(enabled=True)
+
+    calls: list[tuple] = []
+
+    def fake_preprocess(a: Path, o: Path, s: PreprocessingSettings) -> Path:
+        calls.append((a, o, s))
+        return o
+
+    with patch("preprocessing.preprocess_audio", fake_preprocess):
+        with prepared_audio(audio, settings) as result:
+            assert len(calls) == 1
+            assert calls[0][0] == audio
+            assert calls[0][2] is settings
+            assert result == calls[0][1]
 
 
 def test_temp_file_deleted_even_on_exception(tmp_path: Path) -> None:

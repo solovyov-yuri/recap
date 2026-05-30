@@ -18,13 +18,14 @@ uv sync --group dev   # includes pytest, ruff, mypy
 uv run recap transcribe [AUDIO]          # → transcript.txt
 uv run recap summarize [TRANSCRIPT]      # → summary.txt
 uv run recap run [AUDIO]                 # full pipeline
-uv run recap batch [FOLDER]              # process all audio files in a folder
-uv run recap <cmd> --help                # options per command
+uv run recap batch [FOLDER]             # process all audio files in a folder
+uv run recap preprocess [AUDIO]         # preprocess audio to stable WAV (always runs, ignores enabled flag)
+uv run recap <cmd> --help               # options per command
 ```
 
-All commands accept `-v/--verbose` for progress logs, `-o/--output` for output path,
+Most commands accept `-v/--verbose` for progress logs, `-o/--output` for output path,
 `-l/--language` (transcription language), `--summary-language`, `-m/--mode`,
-`--model`, `-p/--provider`, `-f/--format`.
+`--model`, `-p/--provider`, `-f/--format`. The `preprocess` command only accepts `-o/--output` and `-v/--verbose`.
 
 **Tests:**
 ```bash
@@ -32,6 +33,8 @@ uv run pytest -v                         # all tests
 uv run pytest tests/integration -v      # integration tests only
 uv run pytest -m integration -v         # same via marker
 ```
+
+**Agent verification rule:** agents must not run tests, linters, formatters, type checks, or other verification commands themselves in this repository. Instead, ask the user to run the relevant command(s) and report the result. It is okay to suggest exact commands from this section.
 
 **Linting and type checking:**
 ```bash
@@ -147,7 +150,7 @@ src/
 ├── formatters.py    # to_telegram(), to_plain(), to_json() — format LLM output
 ├── models.py        # MeetingSummary dataclass (used by JSON formatter)
 ├── utils.py         # write_text_atomic() — safe file writes via tmp+rename
-├── preprocessing.py # prepared_audio() context manager — optional ffmpeg preprocessing before Whisper
+├── preprocessing.py # preprocess_audio() function + prepared_audio() context manager — ffmpeg preprocessing before Whisper
 ├── prompts.py       # PROMPTS[lang][mode] nested dict; get_prompt(); CHUNK_PROMPTS
 └── providers/
     ├── factory.py   # make_summarizer(), make_transcriber() — single wiring point

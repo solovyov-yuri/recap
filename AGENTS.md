@@ -18,13 +18,14 @@ uv sync --group dev   # includes pytest, ruff, mypy
 uv run recap transcribe [AUDIO]          # → transcript.txt
 uv run recap summarize [TRANSCRIPT]      # → summary.txt
 uv run recap run [AUDIO]                 # full pipeline
-uv run recap batch [FOLDER]              # process all audio files in a folder
-uv run recap <cmd> --help                # options per command
+uv run recap batch [FOLDER]             # process all audio files in a folder
+uv run recap preprocess [AUDIO]         # preprocess audio to stable WAV (always runs, ignores enabled flag)
+uv run recap <cmd> --help               # options per command
 ```
 
-All commands accept `-v/--verbose` for progress logs, `-o/--output` for output path,
+Most commands accept `-v/--verbose` for progress logs, `-o/--output` for output path,
 `-l/--language` (transcription language), `--summary-language`, `-m/--mode`,
-`--model`, `-p/--provider`, `-f/--format`.
+`--model`, `-p/--provider`, `-f/--format`. The `preprocess` command only accepts `-o/--output` and `-v/--verbose`.
 
 **Tests:**
 ```bash
@@ -32,6 +33,8 @@ uv run pytest -v                         # all tests
 uv run pytest tests/integration -v      # integration tests only
 uv run pytest -m integration -v         # same via marker
 ```
+
+**Agent verification rule:** agents must not run tests, linters, formatters, type checks, or other verification commands themselves in this repository. Instead, ask the user to run the relevant command(s) and report the result. It is okay to suggest exact commands from this section.
 
 **Linting and type checking:**
 ```bash
@@ -44,7 +47,7 @@ uv run mypy src/                         # type check
 
 Settings are resolved in priority order: **CLI flags > env vars > config.yaml > defaults**.
 
-Config is a **nested** schema with two sections — `transcription` and `summarization` — each holding a `model` sub-section. There is no backwards compatibility with the old flat keys: any unknown key (legacy or otherwise) raises `ConfigError` with a generic "Unknown config key" message.
+Config is a **nested** schema with three sections — `transcription`, `summarization`, and `preprocessing`. `transcription` and `summarization` each hold a `model` sub-section. There is no backwards compatibility with the old flat keys: any unknown key (legacy or otherwise) raises `ConfigError` with a generic "Unknown config key" message.
 
 **`config.yaml`** (optional, at project root):
 ```yaml
@@ -74,6 +77,17 @@ summarization:
     api_key: null
     base_url: null
 privacy_ack: false             # set true to suppress external-endpoint warning
+preprocessing:
+  enabled: false               # set true to preprocess audio with ffmpeg before Whisper
+  sample_rate: 16000
+  channels: 1                  # 1 (mono) or 2 (stereo)
+  codec: pcm_s16le             # only pcm_s16le is supported
+  loudness_normalization: false
+  target_lufs: -16.0
+  true_peak_db: -1.5
+  loudness_range: 11.0
+  highpass_hz: null            # positive integer or null
+  keep_temp: false             # keep preprocessed WAV for diagnostics
 ```
 
 **Environment variables** (override config.yaml; names mirror the nested path):
@@ -102,6 +116,16 @@ privacy_ack: false             # set true to suppress external-endpoint warning
 | `RECAP_SUMMARIZATION_MODEL_NAME` | `summarization.model.name` |
 | `RECAP_SUMMARIZATION_MODEL_API_KEY` | `summarization.model.api_key` |
 | `RECAP_SUMMARIZATION_MODEL_BASE_URL` | `summarization.model.base_url` |
+| `RECAP_PREPROCESSING_ENABLED` | `preprocessing.enabled` |
+| `RECAP_PREPROCESSING_SAMPLE_RATE` | `preprocessing.sample_rate` |
+| `RECAP_PREPROCESSING_CHANNELS` | `preprocessing.channels` |
+| `RECAP_PREPROCESSING_CODEC` | `preprocessing.codec` |
+| `RECAP_PREPROCESSING_LOUDNESS_NORMALIZATION` | `preprocessing.loudness_normalization` |
+| `RECAP_PREPROCESSING_TARGET_LUFS` | `preprocessing.target_lufs` |
+| `RECAP_PREPROCESSING_TRUE_PEAK_DB` | `preprocessing.true_peak_db` |
+| `RECAP_PREPROCESSING_LOUDNESS_RANGE` | `preprocessing.loudness_range` |
+| `RECAP_PREPROCESSING_HIGHPASS_HZ` | `preprocessing.highpass_hz` |
+| `RECAP_PREPROCESSING_KEEP_TEMP` | `preprocessing.keep_temp` |
 
 `summarization.language` defaults to `null`; the factory falls back to `"ru"`. It deliberately does not inherit `transcription.language`, so English audio still produces a Russian summary unless `summarization.language` or `--summary-language` is set explicitly.
 
@@ -126,6 +150,7 @@ src/
 ├── formatters.py    # to_telegram(), to_plain(), to_json() — format LLM output
 ├── models.py        # MeetingSummary dataclass (used by JSON formatter)
 ├── utils.py         # write_text_atomic() — safe file writes via tmp+rename
+├── preprocessing.py # preprocess_audio() function + prepared_audio() context manager — ffmpeg preprocessing before Whisper
 ├── prompts.py       # PROMPTS[lang][mode] nested dict; get_prompt(); CHUNK_PROMPTS
 └── providers/
     ├── factory.py   # make_summarizer(), make_transcriber() — single wiring point
@@ -138,6 +163,7 @@ tests/
 ├── test_formatters.py
 ├── test_llm.py
 ├── test_pipeline.py
+├── test_preprocessing.py
 ├── test_transcript.py
 ├── test_utils.py
 ├── test_whisper.py
@@ -149,7 +175,9 @@ tests/
 
 ## Key design rules
 
-**Nested config:** `Settings` is composed of frozen sub-dataclasses — `TranscriptionSettings` (with `TranscriptionModelSettings`) and `SummarizationSettings` (with `SummarizationModelSettings`). `Settings.load()` rejects unknown and legacy flat keys with `ConfigError`; there is no silent remapping. All sub-dataclasses are `frozen=True`.
+**Nested config:** `Settings` is composed of frozen sub-dataclasses — `TranscriptionSettings` (with `TranscriptionModelSettings`), `SummarizationSettings` (with `SummarizationModelSettings`), and `PreprocessingSettings`. `Settings.load()` rejects unknown and legacy flat keys with `ConfigError`; there is no silent remapping. All sub-dataclasses are `frozen=True`.
+
+**Audio preprocessing:** `preprocessing.py` exposes `preprocess_audio(audio, output, settings)` (always runs ffmpeg) and `prepared_audio(audio, settings)` (context manager, skips when `settings.enabled` is false). The `preprocess` CLI command calls `preprocess_audio` directly — `enabled` is intentionally ignored, because invoking the command is itself an explicit request. The auto-preprocessing in `transcribe`, `run`, and `batch` uses `prepared_audio` and respects `enabled`.
 
 **Lazy imports:** `cli.py` never imports `providers.*` at top level — imports happen inside command bodies so `recap --help` is instant (no CUDA load).
 

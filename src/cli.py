@@ -188,6 +188,42 @@ def batch(
 
 
 @app.command()
+def preprocess(
+    audio: Annotated[Path | None, typer.Argument(file_okay=True, dir_okay=False, help="Audio file to preprocess")] = None,
+    output: Annotated[Path | None, typer.Option("-o", "--output", help="Output WAV file")] = None,
+    verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Show progress logs")] = False,
+) -> None:
+    """Preprocess audio to a stable WAV format using ffmpeg."""
+    from config import ConfigError, Settings  # noqa: PLC0415
+
+    _configure_logging(verbose)
+    try:
+        settings = Settings.load()
+    except ConfigError as exc:
+        typer.echo(f"Configuration error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    audio_path = audio or settings.audio
+    if not audio_path.exists():
+        typer.echo(f"Error: audio file not found: {audio_path}", err=True)
+        raise typer.Exit(code=1)
+
+    output_path = output or audio_path.with_name(f"{audio_path.stem}.preprocessed.wav")
+    _ensure_output(output_path)
+    logger.info("Preprocessing: %s → %s", audio_path, output_path)
+
+    try:
+        from preprocessing import preprocess_audio  # noqa: PLC0415
+
+        preprocess_audio(audio_path, output_path, settings.preprocessing)
+    except Exception as exc:
+        typer.echo(f"Preprocessing error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Preprocessed audio saved to {output_path}")
+
+
+@app.command()
 def transcribe(
     audio: Annotated[Path | None, typer.Argument(file_okay=True, dir_okay=False, help="Audio file to process")] = None,
     output: Annotated[Path | None, typer.Option("-o", "--output", help="Output transcript file")] = None,

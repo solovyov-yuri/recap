@@ -238,9 +238,17 @@ uv run recap run audio.wav -f json > summary.json
 
 > **Breaking change:** флаг `-m` переназначен с `--model` на `--mode`. Для указания модели используйте `--model`.
 
-### Предобработка аудио
+### Ручная предобработка
 
-Опционально можно привести входные файлы к стабильному WAV перед Whisper. Требует установленный `ffmpeg`.
+```bash
+uv run recap preprocess meeting.mp3 -o meeting.normalized.wav
+```
+
+Команда использует параметры из секции `preprocessing`, но выполняется всегда, даже если `preprocessing.enabled: false`. Поле `enabled` включает только автоматическую предобработку в `transcribe`, `run` и `batch`. Если `-o` не указан, файл сохраняется рядом с исходником как `{stem}.preprocessed.wav`.
+
+### Автоматическая предобработка аудио
+
+Опционально можно приводить входные файлы к стабильному WAV перед Whisper автоматически в командах `transcribe`, `run`, `batch`. Требует установленный `ffmpeg`.
 
 ```yaml
 preprocessing:
