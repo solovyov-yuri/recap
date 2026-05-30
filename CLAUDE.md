@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-`meeting-sum` is a meeting audio transcription and summarization tool. It transcribes audio via `faster-whisper` (CUDA) and generates a Telegram-formatted summary using any OpenAI-compatible LLM (Ollama, lm-studio, vllm, OpenAI).
+`meeting-sum` is a meeting audio transcription and summarization tool. It transcribes audio via `faster-whisper` (CUDA) and generates a Telegram-formatted summary using any OpenAI-compatible LLM (Ollama, lm-studio, vllm, OpenAI, xAI/Grok).
 
 ## Commands
 
@@ -39,12 +39,22 @@ transcript: data/transcript.txt
 summary: data/summary.txt
 language: ru
 whisper_model: large-v3
-provider: ollama          # openai | ollama | lm-studio | vllm
+provider: ollama          # openai | xai | ollama | lm-studio | vllm
 model: qwen3.5:latest
 api_key: null
 base_url: null
 max_transcript_chars: 60000
 summary_mode: medium      # brief | medium | detailed
+chunking_mode: chunk      # chunk | truncate
+privacy_ack: false
+llm_timeout_seconds: 60
+llm_retries: 2
+num_ctx: null             # Ollama context window size in tokens (e.g. 32768); null = model default
+whisper_device: cuda      # cuda | cpu | auto
+whisper_compute_type: default
+whisper_beam_size: 5
+whisper_vad_filter: true
+whisper_condition_on_previous_text: true
 ```
 
 **Environment variables** (override config.yaml):
@@ -62,11 +72,25 @@ summary_mode: medium      # brief | medium | detailed
 | `RECAP_BASE_URL` | `base_url` |
 | `RECAP_MAX_TRANSCRIPT_CHARS` | `max_transcript_chars` |
 | `RECAP_SUMMARY_MODE` | `summary_mode` |
+| `RECAP_CHUNKING_MODE` | `chunking_mode` |
+| `RECAP_PRIVACY_ACK` | `privacy_ack` |
+| `RECAP_LLM_TIMEOUT` | `llm_timeout_seconds` |
+| `RECAP_LLM_RETRIES` | `llm_retries` |
+| `RECAP_NUM_CTX` | `num_ctx` |
+| `RECAP_WHISPER_DEVICE` | `whisper_device` |
+| `RECAP_WHISPER_COMPUTE_TYPE` | `whisper_compute_type` |
+| `RECAP_WHISPER_BEAM_SIZE` | `whisper_beam_size` |
+| `RECAP_WHISPER_VAD_FILTER` | `whisper_vad_filter` |
+| `RECAP_WHISPER_CONDITION_ON_PREVIOUS_TEXT` | `whisper_condition_on_previous_text` |
 | `OPENAI_API_KEY` | `api_key` (fallback) |
 
 `max_transcript_chars` — transcript is truncated at the last newline before this limit before being sent to the LLM (default 60 000 chars ≈ 15k tokens). A warning is logged when truncation occurs.
 
 `summary_mode` — controls the prompt template and output structure: `brief` (2-3 sentences), `medium` (topic + discussions + decisions), `detailed` (participants + timeline + tasks with owners).
+
+`chunking_mode` — what to do when transcript exceeds `max_transcript_chars`: `chunk` splits into chunks summarized separately then merged (default), `truncate` cuts at the limit.
+
+`num_ctx` — Ollama context window size in tokens passed via `options.num_ctx` in the request body. Ignored by OpenAI/xAI. Use when the default Ollama context (2 048–4 096 tokens) is too small for your transcript chunks; e.g. `32768` for ~20 000-char chunks.
 
 ## Architecture
 

@@ -157,6 +157,7 @@ def batch(
         timeout=settings.llm_timeout_seconds,
         max_retries=settings.llm_retries,
         chunking_mode=settings.chunking_mode,
+        num_ctx=settings.num_ctx,
     )
 
     failures: list[tuple[Path, Exception]] = []
@@ -301,6 +302,7 @@ def summarize(
             timeout=settings.llm_timeout_seconds,
             max_retries=settings.llm_retries,
             chunking_mode=settings.chunking_mode,
+            num_ctx=settings.num_ctx,
         )
         raw = summarizer.summarize(tr.to_text())
         summary = to_telegram(raw)
@@ -399,6 +401,7 @@ def run(
             timeout=settings.llm_timeout_seconds,
             max_retries=settings.llm_retries,
             chunking_mode=settings.chunking_mode,
+            num_ctx=settings.num_ctx,
         )
         formatted = to_telegram(summarizer.summarize(tr.to_text()))
     except Exception as exc:

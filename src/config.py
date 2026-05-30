@@ -27,7 +27,7 @@ _KNOWN_FIELDS = {
     "llm_timeout_seconds", "llm_retries",
     "whisper_device", "whisper_compute_type", "whisper_beam_size",
     "whisper_vad_filter", "whisper_condition_on_previous_text",
-    "chunking_mode",
+    "chunking_mode", "num_ctx",
 }
 
 _ENV_MAP: dict[str, str] = {
@@ -51,6 +51,7 @@ _ENV_MAP: dict[str, str] = {
     "RECAP_WHISPER_VAD_FILTER":                 "whisper_vad_filter",
     "RECAP_WHISPER_CONDITION_ON_PREVIOUS_TEXT": "whisper_condition_on_previous_text",
     "RECAP_CHUNKING_MODE":                      "chunking_mode",
+    "RECAP_NUM_CTX":                            "num_ctx",
 }
 
 _VALID_WHISPER_DEVICES = {"cuda", "cpu", "auto"}
@@ -80,6 +81,7 @@ class Settings:
     whisper_vad_filter: bool = True
     whisper_condition_on_previous_text: bool = True
     chunking_mode: str = "chunk"
+    num_ctx: int | None = None
 
     @classmethod
     def load(cls, config_path: Path = Path("config.yaml")) -> Settings:
@@ -178,6 +180,18 @@ class Settings:
             raise ConfigError(
                 f"'whisper_compute_type' must be one of: {available}. Got {data['whisper_compute_type']!r}"
             )
+
+        if "num_ctx" in data:
+            try:
+                data["num_ctx"] = int(data["num_ctx"])
+            except (ValueError, TypeError):
+                raise ConfigError(
+                    f"'num_ctx' must be a positive integer, got {data['num_ctx']!r}"
+                )
+            if data["num_ctx"] <= 0:
+                raise ConfigError(
+                    f"'num_ctx' must be a positive integer, got {data['num_ctx']}"
+                )
 
         if "chunking_mode" in data and data["chunking_mode"] not in ("chunk", "truncate"):
             raise ConfigError(
