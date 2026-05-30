@@ -153,6 +153,18 @@ def batch(
         typer.echo(f"Error loading Whisper model: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
+    summarizer = LLMSummarizer(
+        model=model or settings.model,
+        api_key=settings.api_key,
+        base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
+        max_chars=settings.max_transcript_chars,
+        prompt_template=PROMPTS[mode_name],
+        timeout=settings.llm_timeout_seconds,
+        max_retries=settings.llm_retries,
+        chunking_mode=settings.chunking_mode,
+        num_ctx=settings.num_ctx,
+    )
+
     failures: list[tuple[Path, Exception]] = []
     succeeded = 0
 
@@ -296,6 +308,17 @@ def summarize(
     )
 
     try:
+        summarizer = LLMSummarizer(
+            model=model or settings.model,
+            api_key=settings.api_key,
+            base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
+            max_chars=settings.max_transcript_chars,
+            prompt_template=PROMPTS[mode_name],
+            timeout=settings.llm_timeout_seconds,
+            max_retries=settings.llm_retries,
+            chunking_mode=settings.chunking_mode,
+            num_ctx=settings.num_ctx,
+        )
         raw = summarizer.summarize(tr.to_text())
         if output_format == "json":
             from models import MeetingSummary  # noqa: PLC0415
@@ -389,13 +412,18 @@ def run(
     )
 
     try:
-        raw = summarizer.summarize(tr.to_text())
-        if output_format == "json":
-            from models import MeetingSummary  # noqa: PLC0415
-
-            formatted = to_json(MeetingSummary(raw=raw, mode=mode_name))
-        else:
-            formatted = to_telegram(raw)
+        summarizer = LLMSummarizer(
+            model=model or settings.model,
+            api_key=settings.api_key,
+            base_url=settings.base_url or PROVIDER_PRESETS[provider_name],
+            max_chars=settings.max_transcript_chars,
+            prompt_template=PROMPTS[mode_name],
+            timeout=settings.llm_timeout_seconds,
+            max_retries=settings.llm_retries,
+            chunking_mode=settings.chunking_mode,
+            num_ctx=settings.num_ctx,
+        )
+        formatted = to_telegram(summarizer.summarize(tr.to_text()))
     except Exception as exc:
         typer.echo(f"LLM error: {exc}", err=True)
         raise typer.Exit(code=1) from exc

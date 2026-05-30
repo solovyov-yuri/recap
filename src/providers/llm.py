@@ -27,6 +27,7 @@ class LLMSummarizer:
         max_retries: int = 2,
         retry_backoff: float = 2.0,
         chunking_mode: str = "chunk",
+        num_ctx: int | None = None,
     ) -> None:
         self._model = model
         self._api_key = api_key
@@ -38,6 +39,7 @@ class LLMSummarizer:
         self._max_retries = max_retries
         self._retry_backoff = retry_backoff
         self._chunking_mode = chunking_mode
+        self._num_ctx = num_ctx
 
     def _build_messages(
         self,
@@ -80,10 +82,14 @@ class LLMSummarizer:
                 # Known limitation: tokens printed to stderr during a failed attempt
                 # remain visible; on retry they are printed again. The returned string
                 # is always complete and correct — only the interactive display is affected.
+                extra: dict = {}
+                if self._num_ctx is not None:
+                    extra["options"] = {"num_ctx": self._num_ctx}
                 with client.chat.completions.create(
                     model=self._model,
                     messages=messages,
                     stream=True,
+                    extra_body=extra or None,
                 ) as stream:
                     for chunk in stream:
                         if chunk.choices and (delta := chunk.choices[0].delta.content):
