@@ -313,18 +313,3 @@ uv run ruff format src/       # форматирование кода
 ```bash
 uv run mypy src/
 ```
-
-## Troubleshooting
-
-### Windows: ошибки доступа к кешу uv или temp
-
-Если `uv run pytest` падает с ошибкой доступа к `%LOCALAPPDATA%\uv\cache` или системной temp-директории, задайте локальные пути:
-
-```powershell
-$env:UV_CACHE_DIR = ".uv-cache"
-$env:TMP = ".tmp"
-$env:TEMP = ".tmp"
-uv run pytest -v
-```
-
-Либо добавьте их в `.env` или в настройки профиля PowerShell.
