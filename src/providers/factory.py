@@ -52,6 +52,7 @@ def make_summarizer(
         timeout=summarization.timeout_seconds,
         max_retries=summarization.retries,
         chunking_mode=summarization.chunking_mode,
+        num_ctx=model.num_ctx,
     )
 
 

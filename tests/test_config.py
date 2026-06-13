@@ -132,6 +132,31 @@ def test_env_summarization_tuning_fields(monkeypatch: pytest.MonkeyPatch) -> Non
     assert s.summarization.max_transcript_chars == 30000
 
 
+def test_num_ctx_defaults_to_none() -> None:
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.summarization.model.num_ctx is None
+
+
+def test_num_ctx_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RECAP_SUMMARIZATION_MODEL_NUM_CTX", "32768")
+    s = Settings.load(config_path=Path("nonexistent.yaml"))
+    assert s.summarization.model.num_ctx == 32768
+
+
+def test_num_ctx_from_yaml(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summarization:\n  model:\n    num_ctx: 8192\n", encoding="utf-8")
+    s = Settings.load(config_path=cfg)
+    assert s.summarization.model.num_ctx == 8192
+
+
+def test_num_ctx_rejects_non_positive(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("summarization:\n  model:\n    num_ctx: 0\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="summarization.model.num_ctx"):
+        Settings.load(config_path=cfg)
+
+
 def test_privacy_ack_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("RECAP_PRIVACY_ACK", "true")
     s = Settings.load(config_path=Path("nonexistent.yaml"))

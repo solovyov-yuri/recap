@@ -8,6 +8,16 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Commands
 
+> **⚠️ Environment — read before running anything.**
+> This repository is developed on **Windows**; the virtualenv is a Windows venv at
+> **`.venv\Scripts\python.exe`** (from WSL: `.venv/Scripts/python.exe`).
+> **Do NOT run `uv` (`uv run`, `uv sync`, …) here — it rebuilds/relocates the venv and breaks it.**
+> Agents must not run tests, linters, formatters, type checks, or any verification command themselves
+> (see the verification rule below): ask the user to run them and report the result.
+> If you need a quick read-only check (e.g. an import smoke test), the only acceptable runner is the
+> existing Windows interpreter directly — `.venv/Scripts/python.exe -c "..."` — never `uv`.
+> The `uv ...` lines below are the **commands to hand to the user**, not for the agent to execute.
+
 **Install dependencies:**
 ```bash
 uv sync --group dev   # includes pytest, ruff, mypy
@@ -76,6 +86,7 @@ summarization:
     name: qwen3.5:latest
     api_key: null
     base_url: null
+    num_ctx: null              # Ollama context window in tokens; null = model default; ignored by OpenAI/xAI
 privacy_ack: false             # set true to suppress external-endpoint warning
 preprocessing:
   enabled: false               # set true to preprocess audio with ffmpeg before Whisper
@@ -116,6 +127,7 @@ preprocessing:
 | `RECAP_SUMMARIZATION_MODEL_NAME` | `summarization.model.name` |
 | `RECAP_SUMMARIZATION_MODEL_API_KEY` | `summarization.model.api_key` |
 | `RECAP_SUMMARIZATION_MODEL_BASE_URL` | `summarization.model.base_url` |
+| `RECAP_SUMMARIZATION_MODEL_NUM_CTX` | `summarization.model.num_ctx` |
 | `RECAP_PREPROCESSING_ENABLED` | `preprocessing.enabled` |
 | `RECAP_PREPROCESSING_SAMPLE_RATE` | `preprocessing.sample_rate` |
 | `RECAP_PREPROCESSING_CHANNELS` | `preprocessing.channels` |
@@ -144,8 +156,6 @@ preprocessing:
 src/
 ├── cli.py           # Typer CLI — wires providers via factory, handles I/O, error boundary
 ├── config.py        # nested frozen Settings dataclasses; Settings.load() reads nested yaml then env vars
-├── protocols.py     # Transcriber, Summarizer (typing.Protocol)
-├── pipeline.py      # run_pipeline() — pure function, no disk I/O, returns (Transcript, str)
 ├── transcript.py    # Segment + Transcript dataclasses; from_file / to_text / to_file_format
 ├── formatters.py    # to_telegram(), to_plain(), to_json() — format LLM output
 ├── models.py        # MeetingSummary dataclass (used by JSON formatter)
@@ -162,7 +172,6 @@ tests/
 ├── test_factory.py
 ├── test_formatters.py
 ├── test_llm.py
-├── test_pipeline.py
 ├── test_preprocessing.py
 ├── test_transcript.py
 ├── test_utils.py
@@ -187,7 +196,7 @@ tests/
 
 **Error boundary:** only `cli.py` catches exceptions — providers and pipeline let them propagate. CLI translates to `typer.Exit(code=1)` with a user-readable message.
 
-**Pipeline is pure:** `run_pipeline()` remains a pure helper for tests/embedders: it returns `(Transcript, str)` and performs no disk I/O. CLI commands own I/O and call providers through `providers.factory`.
+**Orchestration lives in the CLI:** each command (`run`/`summarize`/`batch`) drives transcribe → write transcript → summarize → format → write summary itself, so it can persist the transcript before the LLM call (surviving an LLM failure), short-circuit on empty transcription, and branch on output format. Providers are built through `providers.factory`; the CLI is the only error boundary.
 
 **Atomic writes:** all file output goes through `utils.write_text_atomic()` — writes to a temp file in the same directory, then renames atomically. Never write directly with `Path.write_text()` in CLI code.
 
