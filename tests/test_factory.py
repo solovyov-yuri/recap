@@ -128,6 +128,35 @@ def test_make_summarizer_default_model_from_settings(monkeypatch: pytest.MonkeyP
     assert captured["model"] == "my-default-model"
 
 
+def test_make_summarizer_passes_num_ctx(monkeypatch: pytest.MonkeyPatch) -> None:
+    import providers.llm as llm_mod
+
+    captured: dict = {}
+
+    def fake_init(self: object, **kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "__init__", fake_init)
+    settings = _settings(sum_model=SummarizationModelSettings(num_ctx=32768))
+    make_summarizer(settings, "ollama", "medium")
+
+    assert captured["num_ctx"] == 32768
+
+
+def test_make_summarizer_num_ctx_defaults_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    import providers.llm as llm_mod
+
+    captured: dict = {}
+
+    def fake_init(self: object, **kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(llm_mod.LLMSummarizer, "__init__", fake_init)
+    make_summarizer(Settings(), "ollama", "medium")
+
+    assert captured["num_ctx"] is None
+
+
 def test_make_transcriber_passes_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     import providers.whisper as whisper_mod
 
