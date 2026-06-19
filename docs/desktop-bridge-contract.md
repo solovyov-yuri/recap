@@ -1,0 +1,337 @@
+# Tauri <-> Python bridge contract
+
+## 1. Цель bridge
+
+Bridge дает Tauri frontend доступ к существующей Python-логике Recap без shell-first архитектуры. CLI остается поддерживаемым, но desktop не должен парсить human-oriented stdout/stderr как основной контракт.
+
+Bridge должен быть JSON-friendly и устойчивым к долгим задачам.
+
+## 2. Рекомендуемые Python-модели
+
+```python
+@dataclass(frozen=True)
+class RunOptions:
+    audio_path: Path
+    transcript_path: Path | None = None
+    summary_path: Path | None = None
+    output_format: str = "telegram"
+    transcription_language: str | None = None
+    summary_language: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    mode: str | None = None
+
+
+@dataclass(frozen=True)
+class ProgressEvent:
+    step: str
+    status: str
+    message: str
+    percent: float | None = None
+    path: Path | None = None
+
+
+@dataclass(frozen=True)
+class RunResult:
+    status: str
+    transcript_path: Path | None
+    summary_path: Path | None
+    summary_json_path: Path | None
+    transcript_text: str | None
+    summary_text: str | None
+    error_message: str | None = None
+```
+
+Допустимые `step`:
+
+- `preprocess`;
+- `transcribe`;
+- `summarize`;
+- `export`.
+
+Допустимые `status` для event:
+
+- `pending`;
+- `running`;
+- `success`;
+- `warning`;
+- `error`;
+- `cancelled`.
+
+Допустимые `RunResult.status`:
+
+- `success`;
+- `partial_success`;
+- `failed`;
+- `cancelled`.
+
+## 3. Python workflow API
+
+Минимальный API:
+
+```python
+def run_one_file(
+    options: RunOptions,
+    *,
+    progress: Callable[[ProgressEvent], None] | None = None,
+) -> RunResult:
+    ...
+```
+
+Требования:
+
+- загружать `Settings.load()`;
+- применять overrides из `RunOptions`;
+- использовать `providers.factory.make_transcriber()` и `make_summarizer()`;
+- использовать `prepared_audio()`;
+- записывать transcript до LLM;
+- возвращать `partial_success`, если transcript записан, но summarization failed;
+- все файловые записи делать через `write_text_atomic()`;
+- не ловить исключения слишком широко внутри низкоуровневых provider-функций.
+
+## 4. Desktop bridge commands
+
+Tauri commands могут быть реализованы напрямую в Rust с вызовом Python-процесса/bridge, либо через выбранный IPC-механизм. Для frontend контракт должен выглядеть так:
+
+### `get_settings`
+
+Input:
+
+```json
+{}
+```
+
+Output:
+
+```json
+{
+  "audio": "data/meeting.wav",
+  "transcript": "data/transcript.txt",
+  "summary": "data/summary.txt",
+  "privacy_ack": false,
+  "transcription": {
+    "language": "ru",
+    "model": {
+      "provider": "faster-whisper",
+      "name": "large-v3",
+      "device": "cuda",
+      "compute_type": "default",
+      "beam_size": 5,
+      "vad_filter": true,
+      "condition_on_previous_text": true
+    }
+  },
+  "summarization": {
+    "language": null,
+    "mode": "medium",
+    "max_transcript_chars": 60000,
+    "timeout_seconds": 60.0,
+    "retries": 2,
+    "chunking_mode": "chunk",
+    "model": {
+      "provider": "ollama",
+      "name": "qwen3.5:latest",
+      "api_key_configured": false,
+      "base_url": null,
+      "num_ctx": null
+    }
+  },
+  "preprocessing": {
+    "enabled": false,
+    "sample_rate": 16000,
+    "channels": 1,
+    "codec": "pcm_s16le",
+    "loudness_normalization": false,
+    "target_lufs": -16.0,
+    "true_peak_db": -1.5,
+    "loudness_range": 11.0,
+    "highpass_hz": null,
+    "keep_temp": false
+  }
+}
+```
+
+Важно: `api_key` не возвращать открытым текстом.
+
+### `save_settings`
+
+Input: nested config object без `api_key`.
+
+Output:
+
+```json
+{ "ok": true }
+```
+
+Требования:
+
+- сохранять только известные schema keys;
+- перед записью прогонять validation через `Settings.load()` или эквивалентную проверку;
+- не писать secrets в `config.yaml`.
+
+### `set_api_key`
+
+Input:
+
+```json
+{
+  "provider": "openai",
+  "api_key": "..."
+}
+```
+
+Output:
+
+```json
+{ "ok": true }
+```
+
+Требования:
+
+- хранить ключ через Windows Credential Manager / keychain;
+- не логировать ключ;
+- не возвращать ключ frontend после сохранения.
+
+### `delete_api_key`
+
+Input:
+
+```json
+{ "provider": "openai" }
+```
+
+Output:
+
+```json
+{ "ok": true }
+```
+
+### `run_recap`
+
+Input:
+
+```json
+{
+  "audio_path": "C:/meetings/meeting.mp3",
+  "transcript_path": null,
+  "summary_path": null,
+  "output_formats": ["telegram", "plain", "json"],
+  "overrides": {
+    "transcription_language": "ru",
+    "summary_language": "ru",
+    "provider": "ollama",
+    "model": "qwen3.5:latest",
+    "mode": "medium"
+  }
+}
+```
+
+Progress events:
+
+```json
+{
+  "step": "transcribe",
+  "status": "running",
+  "message": "Транскрибация началась",
+  "percent": null,
+  "path": null
+}
+```
+
+Final output:
+
+```json
+{
+  "status": "success",
+  "transcript_path": "C:/.../transcript.txt",
+  "summary_path": "C:/.../summary.txt",
+  "summary_json_path": "C:/.../summary.json",
+  "transcript_text": "...",
+  "summary_text": "...",
+  "error_message": null
+}
+```
+
+### `export_summary`
+
+Input:
+
+```json
+{
+  "summary_text": "...edited by user...",
+  "formats": ["telegram", "plain", "json"],
+  "target_dir": "C:/meetings/output",
+  "base_name": "meeting_2026_06_19",
+  "mode": "medium"
+}
+```
+
+Output:
+
+```json
+{
+  "telegram_path": "C:/.../meeting_2026_06_19_summary.txt",
+  "plain_path": "C:/.../meeting_2026_06_19_summary_plain.txt",
+  "json_path": "C:/.../meeting_2026_06_19_summary.json"
+}
+```
+
+### `get_history`
+
+Output:
+
+```json
+{
+  "items": []
+}
+```
+
+### `delete_history_item`
+
+Input:
+
+```json
+{ "id": "uuid" }
+```
+
+Output:
+
+```json
+{ "ok": true }
+```
+
+Удаляет только запись истории, не файлы.
+
+## 5. Secrets
+
+Для Python можно рассмотреть пакет `keyring`. Для Tauri/Rust можно рассмотреть plugin/store или Rust crate, который работает с Windows Credential Manager.
+
+Требования независимо от реализации:
+
+- secrets не должны попадать в `config.yaml`;
+- secrets не должны попадать в history JSON;
+- secrets не должны попадать в логи;
+- UI показывает только masked state: `ключ сохранен` / `ключ не сохранен`.
+
+## 6. Отмена выполнения
+
+Для MVP cancel можно сделать best-effort:
+
+- frontend показывает `Остановить`;
+- bridge выставляет cancellation flag;
+- workflow проверяет flag между этапами.
+
+Полное прерывание faster-whisper внутри текущего вызова не обязательно для MVP, если это явно описано в UI:
+
+```text
+Остановка произойдет после завершения текущего этапа.
+```
+
+## 7. Logging
+
+Bridge должен различать:
+
+- user-facing event message;
+- technical details for logs.
+
+Frontend показывает короткие сообщения. Детальные exception strings можно хранить в log tab, но не показывать как главный error copy.
