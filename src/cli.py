@@ -22,19 +22,13 @@ def _configure_logging(verbose: bool) -> None:
     )
 
 
-_LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
 _AUDIO_EXTENSIONS = frozenset({".wav", ".mp3", ".m4a", ".ogg"})
 
 
 def _is_external(base_url: str | None, provider: str) -> bool:
-    if provider == "openai" and base_url is None:
-        return True
-    if base_url is None:
-        return False
-    from urllib.parse import urlparse  # noqa: PLC0415
+    from workflows import is_external_provider  # noqa: PLC0415
 
-    hostname = urlparse(base_url).hostname or ""
-    return hostname not in _LOCAL_HOSTNAMES
+    return is_external_provider(base_url, provider)
 
 
 def _warn_if_external(base_url: str | None, provider: str, privacy_ack: bool) -> None:

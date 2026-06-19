@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "faster-whisper>=1.2.1",
+    "keyring>=25.0",
     "nvidia-cublas-cu12>=12.9.2.10",
     "nvidia-cudnn-cu12>=9.22.0.52",
     "openai>=1.0",
@@ -20,6 +21,7 @@ dependencies = [
 
 [project.scripts]
 recap = "cli:app"
+recap-bridge = "desktop_bridge:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.9", "mypy>=1.15"]
@@ -45,7 +47,7 @@ select = ["E", "F", "I", "W", "UP"]
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["cli", "config", "formatters", "models", "pipeline", "prompts", "protocols", "providers", "transcript", "utils"]
+known-first-party = ["cli", "config", "desktop_bridge", "formatters", "models", "pipeline", "prompts", "protocols", "providers", "secrets_store", "transcript", "utils", "workflows"]
 
 [tool.mypy]
 python_version = "3.12"
