@@ -173,7 +173,8 @@ class LLMSummarizer:
                 # Known limitation: tokens printed to stderr during a failed attempt
                 # remain visible; on retry they are printed again. The returned string
                 # is always complete and correct — only the interactive display is affected.
-                extra: dict = {}
+                # No extra_body: num_ctx is native-Ollama only (handled above), and
+                # OpenAI rejects unknown body fields such as ``options`` with a 400.
                 kwargs: dict = {}
                 if response_format is not None:
                     kwargs["response_format"] = response_format
@@ -181,7 +182,6 @@ class LLMSummarizer:
                     model=self._model,
                     messages=messages,
                     stream=True,
-                    extra_body=extra or None,
                     **kwargs,
                 ) as stream:
                     for chunk in stream:

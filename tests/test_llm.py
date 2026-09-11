@@ -214,6 +214,17 @@ def test_timeout_passed_to_openai_client(monkeypatch: pytest.MonkeyPatch) -> Non
     assert captured.get("timeout") == 42.0
 
 
+def test_num_ctx_not_sent_to_openai_compatible_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    # num_ctx is native-Ollama only; OpenAI rejects the request with "Unknown parameter: 'options'".
+    captured: dict = {}
+    monkeypatch.setattr("openai.OpenAI", _make_fake_openai(["ok"], captured_kwargs=captured))
+
+    summarizer = LLMSummarizer(model="test", api_key="sk-test", num_ctx=16384)
+    summarizer.summarize("hi")
+
+    assert "options" not in (captured.get("extra_body") or {})
+
+
 def test_retry_succeeds_on_second_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
     import openai
 
