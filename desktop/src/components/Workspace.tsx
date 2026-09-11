@@ -1,4 +1,4 @@
-import { AlertTriangle, FileAudio, Play, Save, Square, XCircle } from "lucide-react";
+import { AlertTriangle, Copy, FileAudio, Play, Save, Square, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Segmented, Textarea, type SegmentedOption } from "@/components/ui/controls";
@@ -175,7 +175,7 @@ function ResultBanner({
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
         <div className="flex-1">
           <p className="text-base font-semibold text-ink">Транскрипт сохранён, но саммари не создано.</p>
-          <p className="mt-0.5 text-sm text-warn">
+          <p className="mt-0.5 text-sm text-warn" data-selectable>
             Причина: {result.error_message}. Исправьте настройки и повторите только суммаризацию.
           </p>
           <div className="mt-2 flex gap-2">
@@ -185,6 +185,7 @@ function ResultBanner({
             <Button variant="secondary" size="sm" onClick={onSwitchTranscript}>
               Открыть транскрипт
             </Button>
+            <CopyErrorButton message={result.error_message} />
           </div>
         </div>
       </div>
@@ -196,12 +197,36 @@ function ResultBanner({
         <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
         <div className="flex-1">
           <p className="text-base font-semibold text-ink">Не удалось выполнить разбор.</p>
-          <p className="mt-0.5 text-sm text-danger">{result.error_message}</p>
+          <p className="mt-0.5 text-sm text-danger" data-selectable>
+            {result.error_message}
+          </p>
+          <div className="mt-2 flex gap-2">
+            <CopyErrorButton message={result.error_message} />
+          </div>
         </div>
       </div>
     );
   }
   return null;
+}
+
+// The banner text is selectable too; the button spares selecting a long provider error by hand.
+function CopyErrorButton({ message }: { message: string | null }) {
+  const { toast } = useToast();
+  if (!message) return null;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+      toast("Текст ошибки скопирован", "ok");
+    } catch {
+      toast("Не удалось скопировать — выделите текст вручную", "error");
+    }
+  };
+  return (
+    <Button variant="secondary" size="sm" onClick={copy}>
+      <Copy className="h-4 w-4" /> Копировать ошибку
+    </Button>
+  );
 }
 
 function ModeBar({
