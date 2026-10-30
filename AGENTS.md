@@ -66,15 +66,40 @@ window flashes) stays **unverified until the user runs the app**.
 **Honesty about verification.** Never claim a check passed unless you actually ran it in this session. If a
 check is impossible here (Rust/Tauri build, GPU transcription, a live LLM endpoint), say so explicitly and
 list what you did verify and what remains unverified. A false "verified" is worse than an honest gap. (See
-`docs/desktop-agent-checklist.md`.) Saying it once is not enough: add a line to
-`docs/manual-qa-pending.md` (what you changed → how to check it) so the debt accumulates somewhere the
-user can work through, instead of being remembered only by whoever wrote it.
+`docs/desktop-agent-checklist.md`.) If the missing verification outlives the current task, propose a
+`docs/issues/` entry with an objective check and file it only after the user agrees; do not create a
+second QA backlog.
 
 **Docs are part of the change.** If you change behaviour this file, `docs/desktop-bridge-contract.md`,
 `docs/desktop-tauri-spec.md` or the README describe, update that document in the same change. A contract
 that outlives the code it describes is worse than no contract: the next agent obeys it.
 
 **Git:** never commit, create branches, or make other git changes without an explicit request from the user.
+
+## Where work is recorded
+
+Different records answer different questions; do not mix them:
+
+| Location | Answers |
+|---|---|
+| `docs/adr/` | Why a durable decision was made and what was rejected |
+| `docs/issues/roadmap.md` | Which evidence-backed defects and technical debt remain open |
+| `docs/proposals/README.md` | Which new product capabilities are planned, in progress, shipped, deferred or dropped |
+| `docs/reviews/` | What a dated review or manual verification run observed |
+| `CHANGELOG.md` | What changed for users |
+
+The boundary and status rules are authoritative in `docs/adr/0001-record-of-work-taxonomy.md`.
+The project-review report root is `docs/`: issue files plus `index.md`/`roadmap.md` live in
+`docs/issues/`, and snapshots live in `docs/reviews/`. `/burndown` reads
+`docs/issues/roadmap.md`.
+
+An issue is a problem relative to behavior already shipped or explicitly accepted. A proposal is a
+capability Recap does not have yet; do not give product priority a fake severity. When ordinary work
+uncovers debt that will not be fixed in the current task, check for a duplicate and propose one
+self-contained issue (`source: work`) in the final report; create it only after the user agrees.
+Status and human decisions live only in the roadmap, never in issue prose. Proposal status lives
+only in `docs/proposals/README.md`. An ADR that deliberately defers required work names the issue
+that tracks it.
 
 ## Architecture
 
@@ -103,7 +128,8 @@ src/
 └── providers/
     ├── factory.py    # make_summarizer() / make_transcriber() — the single provider wiring point
     ├── whisper.py    # WhisperTranscriber (lazy faster_whisper import after CUDA path setup)
-    └── llm.py        # LLMSummarizer (OpenAI-compatible client, streaming, chunking/truncation)
+    ├── llm.py        # LLMSummarizer (OpenAI-compatible client + budgeted native Ollama orchestration)
+    └── ollama_chat.py # native streaming transport, token estimate, incomplete/cancelled exceptions
 
 desktop/              # Tauri 2 desktop app
 ├── src/              # React + TypeScript UI; src/lib/bridge.ts is the single bridge entry (getBridge),
@@ -138,7 +164,9 @@ Non-obvious semantics:
   `transcription.language`, so English audio still yields a Russian summary unless set explicitly.
 - `summarization.max_transcript_chars` is the per-request LLM limit. `chunking_mode: chunk` splits long
   transcripts and merges per-chunk summaries; `truncate` cuts at the last newline before the limit.
-- `summarization.model.num_ctx` is Ollama's `options.num_ctx`; ignored by OpenAI/xAI.
+- `summarization.model.num_ctx` is native Ollama's `options.num_ctx`; null means Recap's 8192-token
+  default (4096 for a smaller memory budget). Other providers ignore it. Ollama chunks also respect
+  an estimated token budget for instructions/schema/output, with server truncation/shift disabled.
 - `summarization.mode`: `brief` (2–3 sentences) | `medium` (topic + discussions + decisions) |
   `detailed` (participants + timeline + tasks with owners) | `lecture` (a study summary of a talk,
   not meeting minutes). The authoritative list is `SUMMARY_MODES` in `prompts.py`.
@@ -172,6 +200,16 @@ Non-obvious semantics:
   `history.json`, or logs. The UI shows only a masked boolean.
 - **LLM streaming.** `LLMSummarizer.summarize()` streams tokens to stderr and returns the full string
   (raw text, or JSON when `structured=True`). It stays "dumb": validation/parsing live above it.
+  Ollama uses `/api/chat` with thinking off, bounded output and sequential budgeted chunks. Its
+  incomplete/empty responses fail; non-shrinking/deep merges fail instead of dropping the tail.
+  Intermediate evidence selections are cached in memory for one source transcript to reuse on final text fallback.
+  Native Ollama asks for JSON excerpt indices, validates them, and retains source excerpts verbatim;
+  only the final pass paraphrases. This is an exception to the generic text-chunk/JSON-final flow below.
+  Optional callbacks report chunk progress and poll cancellation before requests and during streams;
+  `SummarizationCancelled` bypasses JSON fallback and is translated to `RunResult("cancelled")`.
+  Before local Ollama summarization in a full run, Whisper unloads its weights (including from
+  the desktop's cached instance). The next transcription reloads them; transcribe-only and remote
+  summarization keep the previous warm-cache behavior.
 - **Structured summary pipeline.** The `MeetingSummary` object is the single source of truth for all
   formats. `workflows._generate_summary()` tries JSON generation (`response_format`, modes in
   `JSON_PROMPTS` only) → `parse_summary_json`. `LLMSummarizer` asks for `SUMMARY_JSON_SCHEMA` first
